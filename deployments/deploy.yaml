@@ -40,6 +40,38 @@ profiles:
         tls: dtupay.cn
         mode: web+api
         web: adaptive
+      - domain: membership-dev.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.86offer.cn
+        tls: 86offer.cn
+        mode: web+api
+        web: adaptive
     packages: []
     overrides:
       topology:
@@ -83,6 +115,38 @@ profiles:
         web: adaptive
       - domain: membership.dtupay.cn
         tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.86offer.cn
+        tls: 86offer.cn
         mode: web+api
         web: adaptive
     packages: []
@@ -130,6 +194,38 @@ profiles:
         tls: dtupay.cn
         mode: web+api
         web: adaptive
+      - domain: membership-staging.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.86offer.cn
+        tls: 86offer.cn
+        mode: web+api
+        web: adaptive
     packages: []
     overrides:
       topology:
@@ -173,6 +269,38 @@ profiles:
         web: adaptive
       - domain: membership-test.dtupay.cn
         tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.86offer.cn
+        tls: 86offer.cn
         mode: web+api
         web: adaptive
     packages: []
@@ -220,6 +348,38 @@ profiles:
         tls: dtupay.cn
         mode: web+api
         web: adaptive
+      - domain: membership-dev.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-dev.86offer.cn
+        tls: 86offer.cn
+        mode: web+api
+        web: adaptive
     packages: []
     overrides:
       topology:
@@ -263,6 +423,38 @@ profiles:
         web: adaptive
       - domain: membership.dtupay.cn
         tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership.86offer.cn
+        tls: 86offer.cn
         mode: web+api
         web: adaptive
     packages: []
@@ -310,6 +502,38 @@ profiles:
         tls: dtupay.cn
         mode: web+api
         web: adaptive
+      - domain: membership-staging.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-staging.86offer.cn
+        tls: 86offer.cn
+        mode: web+api
+        web: adaptive
     packages: []
     overrides:
       topology:
@@ -353,6 +577,38 @@ profiles:
         web: adaptive
       - domain: membership-test.dtupay.cn
         tls: dtupay.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.skubc.com
+        tls: skubc.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.skubc.cn
+        tls: skubc.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.zowalk.com
+        tls: zowalk.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.zowalk.cn
+        tls: zowalk.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.offer86.com
+        tls: offer86.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.offer86.cn
+        tls: offer86.cn
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.86offer.com
+        tls: 86offer.com
+        mode: web+api
+        web: adaptive
+      - domain: membership-test.86offer.cn
+        tls: 86offer.cn
         mode: web+api
         web: adaptive
     packages: []
