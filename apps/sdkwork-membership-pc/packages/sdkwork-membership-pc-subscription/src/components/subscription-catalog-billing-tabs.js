@@ -1,0 +1,7 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+export function SubscriptionCatalogBillingTabs({ billingCycleIndex, billingCycles, keyPrefix = "billing", onSelectBillingCycle, }) {
+    return (_jsx("div", { className: "inline-flex rounded-full border border-zinc-200 bg-zinc-100 p-1 dark:border-zinc-800 dark:bg-zinc-900 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:rounded-lg", children: billingCycles.map((cycle, index) => (_jsxs("button", { className: `relative flex items-center gap-1.5 rounded-full px-6 py-2 text-[14px] font-medium transition-colors max-sm:justify-center max-sm:rounded-md max-sm:px-2 ${billingCycleIndex === index
+                ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm"
+                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"}`, onClick: () => onSelectBillingCycle(index), type: "button", children: [_jsx("span", { className: "whitespace-nowrap", children: cycle.label }), cycle.discountLabel ? (_jsx("span", { className: "whitespace-nowrap text-[12px] font-bold opacity-70", children: cycle.discountLabel })) : null] }, `${keyPrefix}-${cycle.label}`))) }));
+}
+//# sourceMappingURL=subscription-catalog-billing-tabs.js.map
