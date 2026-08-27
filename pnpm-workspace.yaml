@@ -32,6 +32,7 @@ packages:
   - "../sdkwork-promotion/apps/sdkwork-promotion-pc/packages/sdkwork-promotion-pc-coupon"
   - "../sdkwork-promotion/sdks/sdkwork-promotion-backend-sdk/sdkwork-promotion-backend-sdk-typescript"
 
+  - "../sdkwork-ui/sdkwork-ui-mobile-react"
 catalog:
   "@monaco-editor/react": ^4.7.0
   "@playwright/test": ^1.52.0
@@ -141,3 +142,4 @@ catalog:
   vite-plugin-dts: ^4.5.4
   vitest: ^4.1.8
   zustand: ^5.0.12
+
