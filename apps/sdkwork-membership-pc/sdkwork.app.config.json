@@ -12,7 +12,8 @@
     "identifiers": {
       "desktopAppId": "com.sdkwork.membership.pc.desktop",
       "containerImage": "registry.sdkwork.com/apps/sdkwork-membership-pc"
-    }
+    },
+    "officialWebsiteUrl": "https://sdkwork.com/apps/sdkwork-membership-pc"
   },
   "backend": {
     "profileKey": "backend-root-admin",
@@ -26,46 +27,201 @@
   "runtime": {
     "family": "web",
     "framework": "react",
-    "runtimes": ["WEB", "BROWSER"],
-    "deliveryModes": ["WEB_URL"],
-    "supportedDeploymentProfiles": ["standalone", "cloud"],
+    "runtimes": [
+      "WEB",
+      "BROWSER"
+    ],
+    "deliveryModes": [
+      "WEB_URL"
+    ],
+    "supportedDeploymentProfiles": [
+      "standalone",
+      "cloud"
+    ],
     "defaultDeploymentProfile": "standalone"
   },
-  "envBindings": {
-    "schemaVersion": 2,
-    "family": "web",
-    "runtime": "vite-react",
-    "preset": "vite-react-standard",
-    "outputStrategy": "dotenv-overlay",
-    "platform": "web",
-    "ownerMode": "tenant",
-    "grantMode": "current",
-    "tokenPlatform": "WEB",
-    "variables": [
+  "media": {
+    "icons": {
+      "primary": {
+        "id": "sdkwork-membership-pc-primary-icon",
+        "type": "ICON",
+        "purpose": "PRIMARY",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-membership-pc/assets/icon-1024.png",
+        "platform": "APP",
+        "locale": "en-US",
+        "width": 1024,
+        "height": 1024,
+        "format": "PNG",
+        "fileSizeBytes": 524288,
+        "alphaChannel": false,
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true
+        }
+      },
+      "platform": [],
+      "metadata": {
+        "generatedPlaceholder": true
+      }
+    },
+    "screenshots": [
       {
-        "name": "VITE_SDKWORK_MEMBERSHIP_PC_APP_API_BASE_URL",
-        "required": true,
-        "tracked": true,
-        "surface": "app-api",
-        "sdkFamily": "sdkwork-membership-app-sdk"
+        "id": "sdkwork-membership-pc-web-screenshot",
+        "type": "SCREENSHOT",
+        "purpose": "CATALOG_SCREENSHOT",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-membership-pc/media/web-screenshot.png",
+        "platform": "WEB",
+        "locale": "en-US",
+        "deviceClass": "BROWSER",
+        "displayType": "WEB_DESKTOP",
+        "width": 1920,
+        "height": 1080,
+        "format": "PNG",
+        "fileSizeBytes": 1048576,
+        "alphaChannel": false,
+        "caption": "SDKWork Membership PC product screenshot.",
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true,
+          "altText": "SDKWork Membership PC app screenshot."
+        }
       }
     ],
-    "sdkBaseUrls": {
-      "appApiBaseUrlKey": "VITE_SDKWORK_MEMBERSHIP_PC_APP_API_BASE_URL",
-      "dependencySdkBaseUrlKeys": {}
+    "previews": [
+      {
+        "id": "sdkwork-membership-pc-catalog-preview",
+        "type": "PREVIEW_IMAGE",
+        "purpose": "CATALOG_PREVIEW",
+        "url": "https://cdn.sdkwork.com/apps/sdkwork-membership-pc/media/preview-cover.png",
+        "platform": "WEB",
+        "locale": "en-US",
+        "width": 1600,
+        "height": 900,
+        "format": "PNG",
+        "fileSizeBytes": 786432,
+        "alphaChannel": false,
+        "caption": "SDKWork Membership PC preview.",
+        "sortOrder": 0,
+        "enabled": true,
+        "metadata": {
+          "generatedPlaceholder": true,
+          "altText": "SDKWork Membership PC preview cover."
+        }
+      }
+    ],
+    "metadata": {
+      "assetVersion": "0.1.0",
+      "defaultLocale": "en-US"
     }
   },
   "publish": {
     "config": {
       "workspaceRoot": "sdkwork-membership",
       "managedBy": "sdkwork-membership-workspace"
+    },
+    "status": "ACTIVE",
+    "platforms": [
+      "WEB"
+    ],
+    "installPlatforms": [
+      "WEB"
+    ],
+    "defaultPackageId": "linux-x64-standalone-server-tar-gz",
+    "installSkill": {
+      "name": "sdkwork-skills-app"
+    },
+    "stores": [],
+    "storeUrl": "https://sdkwork.com/apps/sdkwork-membership-pc"
+  },
+  "artifacts": {
+    "installConfig": {
+      "defaultPackageId": "linux-x64-standalone-server-tar-gz",
+      "installCommand": "sdkwork install sdkwork-membership-pc",
+      "launchCommand": "sdkwork open sdkwork-membership-pc",
+      "uninstallCommand": "sdkwork uninstall sdkwork-membership-pc",
+      "packages": [
+        {
+          "id": "linux-x64-standalone-server-tar-gz",
+          "name": "Sdkwork Membership Pc standalone server archive",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "TAR_GZ",
+          "platform": "API",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-membership-pc/STABLE/0.1.0/linux-x64-standalone-server-tar-gz-0.1.0.tar.gz",
+          "architecture": "x64",
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "5843afd1e92282047134ace1e79cad546c0099d2ecb00af3a03bf31cf008f6b7",
+          "deploymentProfile": "standalone",
+          "runtimeTarget": "server",
+          "profileBinding": "fixed",
+          "enabled": true,
+          "metadata": {
+            "releaseBuildDeferred": false
+          }
+        },
+        {
+          "id": "linux-x64-cloud-server-tar-gz",
+          "name": "Sdkwork Membership Pc cloud server archive",
+          "sourceType": "BINARY_URL",
+          "packageFormat": "TAR_GZ",
+          "platform": "API",
+          "url": "https://cdn.sdkwork.com/apps/sdkwork-membership-pc/STABLE/0.1.0/linux-x64-cloud-server-tar-gz-0.1.0.tar.gz",
+          "architecture": "x64",
+          "checksumAlgorithm": "SHA-256",
+          "checksum": "b81cdcfe988e26fdb5ff96b9d44f0e58e0119df643157080cc05144e94ba4b97",
+          "deploymentProfile": "cloud",
+          "runtimeTarget": "server",
+          "profileBinding": "fixed",
+          "enabled": true,
+          "metadata": {
+            "releaseBuildDeferred": false
+          }
+        }
+      ]
     }
+  },
+  "release": {
+    "currentVersion": "0.1.0",
+    "defaultChannel": "STABLE",
+    "latest": {
+      "STABLE": "0.1.0"
+    },
+    "notes": [
+      {
+        "version": "0.1.0",
+        "releaseChannel": "STABLE",
+        "title": "SDKWork Membership PC 0.1.0",
+        "summary": "SDKWork Membership PC initialized standard release.",
+        "content": "Initial SDKWork App Standard v3 manifest for SDKWork Membership PC.",
+        "highlights": [
+          "SDKWork App Standard v3 configuration initialized",
+          "platform_app projection metadata standardized",
+          "Download package matrix normalized"
+        ],
+        "packageIds": [
+          "linux-x64-standalone-server-tar-gz",
+          "linux-x64-cloud-server-tar-gz"
+        ],
+        "publishedAt": "2026-05-07T00:00:00Z",
+        "current": true,
+        "forceUpdate": false,
+        "minSupportedVersion": "0.1.0",
+        "metadata": {}
+      }
+    ]
+  },
+  "security": {
+    "checksumRequired": false,
+    "signatureRequired": false,
+    "sbomRequired": false
   },
   "devApp": {
     "sourceRoot": "apps/sdkwork-membership-pc"
   },
   "metadata": {
     "standardOwner": "sdkwork-membership",
-    "initializedAt": "2026-06-24T00:00:00.000Z"
+    "initializedAt": "2026-06-24T00:00:00.000Z",
+    "deploymentConfig": "etc/sdkwork.deployment.config.json"
   }
 }
