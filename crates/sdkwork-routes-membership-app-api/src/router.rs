@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -619,15 +620,29 @@ async fn claim_daily_reward(
 #[serde(rename_all = "camelCase")]
 struct FeatureAccessCheckRequest {
     feature_code: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     required_level: Option<i64>,
 }
 
 async fn check_feature_access(
     ctx: WebRequestContext,
     State(state): State<AppMembershipState>,
-    Json(request): Json<FeatureAccessCheckRequest>,
+    request: Result<Json<FeatureAccessCheckRequest>, JsonRejection>,
 ) -> axum::response::Response {
+    // Surface the concrete deserialization failure instead of letting the
+    // gateway normalize the extractor rejection into an opaque 42201 whose
+    // detail collapses to the title text. Callers most often send
+    // `requiredLevel` as a JSON number (or an empty string) while the
+    // int64-as-string contract requires a decimal string.
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(rejection) => {
+            return ApiProblem::bad_request(format!(
+                "membership feature access check request body is invalid: {rejection}"
+            ))
+            .into_response_for(&ctx);
+        }
+    };
     finish_api_created(
         &ctx,
         async {

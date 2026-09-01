@@ -160,9 +160,9 @@ pub struct AppMembershipBenefitItem {
     pub description: Option<String>,
     pub icon: Option<String>,
     pub claimed: bool,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub usage_limit: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub used_count: Option<i64>,
     /// Raw text value of the benefit grant quantity. Used for non-numeric
     /// comparison table cells like "2K", "4K/8K", "8折算力积分", "标准生成通道".
@@ -183,7 +183,7 @@ pub struct AppMembershipPlanItem {
     pub name: String,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub rank: i64,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub required_points: Option<i64>,
     pub description: Option<String>,
     pub icon: Option<String>,
@@ -199,16 +199,16 @@ pub struct AppMembershipInfoResponse {
     pub membership_status: String,
     pub started_at: Option<String>,
     pub expires_at: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub remaining_days: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub total_days: Option<i64>,
     pub total_spent: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub points: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub growth_value: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub upgrade_growth_value: Option<i64>,
     pub benefits: Vec<AppMembershipBenefitItem>,
 }
@@ -220,7 +220,7 @@ pub struct AppMembershipStatusResponse {
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub plan_rank: i64,
     pub expires_at: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub point_balance: Option<i64>,
 }
 
@@ -279,7 +279,7 @@ pub struct AppMembershipPointsHistoryItem {
     pub change_type: String,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub change_amount: i64,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     pub before_balance: Option<i64>,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub after_balance: i64,

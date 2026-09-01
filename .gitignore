@@ -42,6 +42,11 @@ apps/*/config/*/*.local.toml
 **/generated/**/*.js.map
 **/generated/**/*.d.ts.map
 
+# Compiled TS outputs under src/i18n (only .ts sources are tracked)
+**/src/i18n/**/*.js
+**/src/i18n/**/*.js.map
+**/src/i18n/**/*.d.ts.map
+
 # SDKWork local workspace state
 .sdkwork/local/
 .sdkwork/tmp/

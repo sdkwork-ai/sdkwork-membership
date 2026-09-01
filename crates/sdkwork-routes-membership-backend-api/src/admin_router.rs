@@ -95,7 +95,7 @@ struct AdminMembershipPlanMutationRequest {
     category: Option<String>,
     code: Option<String>,
     name: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     rank: Option<i64>,
     benefits: Option<Vec<AdminMembershipBenefitMutationRequest>>,
     status: Option<String>,
@@ -104,7 +104,7 @@ struct AdminMembershipPlanMutationRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AdminMembershipBenefitMutationRequest {
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     id: Option<i64>,
     name: Option<String>,
     benefit_key: Option<String>,
@@ -112,9 +112,9 @@ struct AdminMembershipBenefitMutationRequest {
     description: Option<String>,
     icon: Option<String>,
     claimed: Option<bool>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     usage_limit: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     used_count: Option<i64>,
 }
 
@@ -128,7 +128,7 @@ struct AdminMembershipPackageMutationRequest {
     name: Option<String>,
     price_amount: Option<String>,
     currency_code: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     duration_days: Option<i64>,
     discount: Option<i64>,
     status: Option<String>,
@@ -142,9 +142,9 @@ struct AdminMembershipPackageGroupMutationRequest {
     name: Option<String>,
     description: Option<String>,
     billing_cycle: Option<String>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     duration_days: Option<i64>,
-    #[serde(with = "sdkwork_utils_rust::serde_int64::option")]
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
     sort_weight: Option<i64>,
     status: Option<String>,
 }
