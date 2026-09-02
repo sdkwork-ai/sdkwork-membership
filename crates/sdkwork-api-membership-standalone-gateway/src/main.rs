@@ -1,5 +1,5 @@
 use sdkwork_api_membership_assembly::assemble_api_router_from_env;
-use sdkwork_web_bootstrap::ComposedApiAssembly;
+use sdkwork_web_bootstrap::ApiModuleRegistry;
 
 #[tokio::main]
 async fn main() {
@@ -17,7 +17,10 @@ async fn run() -> Result<(), String> {
     let resolver = sdkwork_iam_web_adapter::iam_web_request_context_resolver_from_env().await;
     let framework =
         sdkwork_iam_web_adapter::build_web_framework_builder(resolver, manifest, Vec::new());
-    let app = ComposedApiAssembly::try_compose("SDKWork Membership API", vec![assembly])?
+    let mut module_registry = ApiModuleRegistry::new();
+    module_registry.add_modules(vec![assembly]);
+    let app = module_registry
+        .try_compose("SDKWork Membership API")?
         .into_hosted(framework)
         .router;
     let addr = std::env::var("SDKWORK_MEMBERSHIP_APPLICATION_PUBLIC_INGRESS_BIND")
@@ -45,14 +48,17 @@ async fn shutdown_signal() {
 
     #[cfg(unix)]
     let terminate = async {
-        if let Err(error) =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("failed to install SIGTERM handler")
-                .recv()
-                .await
-        {
-            tracing::warn!("failed to listen for SIGTERM: {error}");
-        }
+        // `Signal::recv()` resolves to `Option<()>`; `None` means the signal
+        // stream is closed, which is a valid termination for the select below.
+        let mut signal =
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(signal) => signal,
+                Err(error) => {
+                    tracing::warn!("failed to install SIGTERM handler: {error}");
+                    return;
+                }
+            };
+        signal.recv().await;
     };
 
     #[cfg(not(unix))]
