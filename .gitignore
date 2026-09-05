@@ -19,6 +19,9 @@ tmp/
 *.sqlite3
 .DS_Store
 Thumbs.db
+# Local temp scratch files (e.g. _tmp_<pid>_<hash>)
+_tmp_*
+**_tmp_*
 
 .env
 .env.*
