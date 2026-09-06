@@ -89,3 +89,4 @@ coverage/
 .DS_Store
 Thumbs.db
 **/public/runtime-env.json
+/bin/
