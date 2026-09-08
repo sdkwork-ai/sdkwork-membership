@@ -8,6 +8,7 @@ import {
   useNavigate,
 } from "react-router-dom";
 import { SdkworkThemeProvider } from "@sdkwork/ui-pc-react/theme";
+import { resolveBaseUrl } from "@sdkwork/sdk-common";
 import { bootstrapSdkworkMembershipAppService } from "@sdkwork/membership-service";
 import { sdkworkMembershipPcRuntimeIdentity } from "@sdkwork/membership-pc-core";
 
@@ -55,6 +56,16 @@ function resolveRequiredAppApiBaseUrl(key: string, developmentDefault: string): 
 }
 
 function resolveMembershipApiBaseUrl(): string {
+  // Single shared base-url key (`SDKWORK_API_BASE_URL`) resolved through
+  // `@sdkwork/sdk-common`: candidates may be comma/semicolon separated and the
+  // matching API host is chosen from the current page's environment+brand.
+  // The membership App SDK expects a bare origin (it appends /app/v3/api
+  // itself), so path preservation stays off. Legacy per-app env keys and the
+  // development default stay as fallbacks.
+  const shared = resolveBaseUrl({ envKey: "SDKWORK_API_BASE_URL" });
+  if (shared.reason !== "empty" && shared.url) {
+    return shared.url;
+  }
   return resolveRequiredAppApiBaseUrl(
     "VITE_SDKWORK_MEMBERSHIP_PC_APP_API_BASE_URL",
     DEFAULT_MEMBERSHIP_APP_API_BASE_URL,
