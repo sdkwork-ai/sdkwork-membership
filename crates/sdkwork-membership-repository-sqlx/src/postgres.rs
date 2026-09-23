@@ -59,7 +59,7 @@ SELECT
     CAST(p.duration_days AS INTEGER) AS duration_days,
     CAST(COALESCE(p.sort_weight, 0) AS INTEGER) AS sort_weight,
     CAST(COALESCE(p.recommended, 0) AS INTEGER) AS recommended,
-    COALESCE((s.spec_json::jsonb -> 'tags')::text, '[]') AS tags_json,
+    CAST(p.tags AS TEXT) AS tags_json,
     p.id AS package_storage_id,
     p.package_group_id AS package_group_storage_id,
     p.plan_id AS plan_storage_id,
@@ -77,8 +77,6 @@ JOIN membership_package_group g
     ON g.id = p.package_group_id
 LEFT JOIN membership_plan l
     ON l.id = p.plan_id
-LEFT JOIN commerce_product_sku s
-    ON s.id = p.sku_id
 WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
   AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
   AND (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id IS NULL)
@@ -98,7 +96,7 @@ SELECT
     CAST(p.duration_days AS INTEGER) AS duration_days,
     CAST(COALESCE(p.sort_weight, 0) AS INTEGER) AS sort_weight,
     CAST(COALESCE(p.recommended, 0) AS INTEGER) AS recommended,
-    COALESCE((s.spec_json::jsonb -> 'tags')::text, '[]') AS tags_json,
+    CAST(p.tags AS TEXT) AS tags_json,
     p.id AS package_storage_id,
     p.package_group_id AS package_group_storage_id,
     p.plan_id AS plan_storage_id,
@@ -116,8 +114,6 @@ JOIN membership_package_group g
     ON g.id = p.package_group_id
 LEFT JOIN membership_plan l
     ON l.id = p.plan_id
-LEFT JOIN commerce_product_sku s
-    ON s.id = p.sku_id
 WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id = CAST($4 AS TEXT) OR p.tenant_id IS NULL)
   AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = CAST($5 AS TEXT) OR p.organization_id = '0')
   AND (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id = CAST($4 AS TEXT) OR g.tenant_id IS NULL)
@@ -1290,34 +1286,14 @@ async fn create_admin_membership_package(
         &command.requested_at,
     )
     .await?;
-    sqlx::query(
-        r#"
-        INSERT INTO commerce_product_sku
-            (id, tenant_id, organization_id, spu_id, sku_no, name, title, price_amount, original_price_amount, currency_code, fulfillment_type, inventory_tracking, status, spec_json, created_at, updated_at)
-        VALUES
-            ($1, $2, $3, 'seed-product-membership', $4, $5, $5, $6, NULL, $7, 'membership_activation', 'untracked', $8, '{}', $9::timestamptz, $9::timestamptz)
-        ON CONFLICT(id) DO UPDATE SET
-            sku_no = excluded.sku_no,
-            name = excluded.name,
-            title = excluded.title,
-            price_amount = excluded.price_amount,
-            currency_code = excluded.currency_code,
-            status = excluded.status,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&sku_id)
-    .bind(&tenant_id)
-    .bind(&organization_id)
-    .bind(&command.input.code)
-    .bind(&command.input.name)
-    .bind(&command.input.price_amount)
-    .bind(&command.input.currency_code)
-    .bind(&command.input.status)
-    .bind(&command.requested_at)
-    .execute(pool)
-    .await
-    .map_err(|error| store_error("failed to upsert membership package sku", error))?;
+    // The membership package no longer projects a SKU row into the
+    // merchandise-owned `commerce_product_sku` table. That projection was a
+    // cross-owner write against a schema this repository does not own, and
+    // sdkwork-merchandise v2 renamed the columns it relied on
+    // (`price_amount` -> `list_price_minor` / `sale_price_minor`, and
+    // `spec_json` -> `metadata`), so it cannot be expressed any more.
+    // `membership_package` is the authority for a package's price, currency,
+    // and tags.
     sqlx::query(
         r#"
         INSERT INTO membership_package
@@ -1438,34 +1414,9 @@ async fn update_admin_membership_package(
         &command.requested_at,
     )
     .await?;
-    sqlx::query(
-        r#"
-        INSERT INTO commerce_product_sku
-            (id, tenant_id, organization_id, spu_id, sku_no, name, title, price_amount, original_price_amount, currency_code, fulfillment_type, inventory_tracking, status, spec_json, created_at, updated_at)
-        VALUES
-            ($1, $2, $3, 'seed-product-membership', $4, $5, $5, $6, NULL, $7, 'membership_activation', 'untracked', $8, '{}', $9::timestamptz, $9::timestamptz)
-        ON CONFLICT(id) DO UPDATE SET
-            sku_no = excluded.sku_no,
-            name = excluded.name,
-            title = excluded.title,
-            price_amount = excluded.price_amount,
-            currency_code = excluded.currency_code,
-            status = excluded.status,
-            updated_at = excluded.updated_at
-        "#,
-    )
-    .bind(&sku_id)
-    .bind(&tenant_id)
-    .bind(&organization_id)
-    .bind(&command.input.code)
-    .bind(&command.input.name)
-    .bind(&command.input.price_amount)
-    .bind(&command.input.currency_code)
-    .bind(&command.input.status)
-    .bind(&command.requested_at)
-    .execute(pool)
-    .await
-    .map_err(|error| store_error("failed to upsert membership package sku", error))?;
+    // Retired with the create path: no SKU row is projected into the
+    // merchandise-owned `commerce_product_sku` table. `membership_package`
+    // owns the package price, currency, status, and tags.
     sqlx::query(
         r#"
         UPDATE membership_package
@@ -3902,23 +3853,22 @@ async fn validate_coupon_package_postgres(
     pool: &PgPool,
     command: &GrantCouponSubscriptionCommand,
 ) -> AppMembershipResult<()> {
+    // Validated against the membership-owned `membership_package` row alone.
+    // This used to cross-check `commerce_product_sku` / `commerce_product_spu`,
+    // but a membership package no longer projects a SKU row into the
+    // merchandise-owned catalog, so the declared SKU must match the package's
+    // own `sku_id`. `product_id` stays a required correlation field carried by
+    // the order line; membership owns no product identity to check it against.
     let matched = sqlx::query_scalar::<_, i64>(
         r#"
         SELECT COUNT(1)
         FROM membership_package p
-        JOIN commerce_product_sku s
-          ON s.tenant_id = p.tenant_id AND s.id = p.sku_id
-        JOIN commerce_product_spu product
-          ON product.tenant_id = s.tenant_id AND product.id = s.spu_id
         WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.external_id = $3
           AND p.duration_days = $4
           AND p.status = 'active'
-          AND s.id = $5
-          AND s.spu_id = $6
-          AND s.status = 'active'
-          AND product.status = 'active'
+          AND p.sku_id = CAST($5 AS TEXT)
         "#,
     )
     .bind(command.subject.tenant_id)
@@ -3926,13 +3876,12 @@ async fn validate_coupon_package_postgres(
     .bind(command.package_id)
     .bind(command.duration_days)
     .bind(command.sku_id.trim())
-    .bind(command.product_id.trim())
     .fetch_one(pool)
     .await
     .map_err(|error| store_error("failed to validate coupon subscription SKU", error))?;
     if matched != 1 {
         return Err(CommerceServiceError::conflict(
-            "coupon subscription package does not match the declared Product and SKU",
+            "coupon subscription package does not match the declared SKU",
         ));
     }
     Ok(())
