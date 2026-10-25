@@ -20,7 +20,7 @@ Do not copy root standard text into this application. If these relative paths do
 
 ## Application Identity
 
-Read `sdkwork.app.config.json` only when changing PC application behavior, runtime config, SDK wiring, release metadata, packaging, or app-owned capabilities.
+Read `agent.app.config.json` only when changing PC application behavior, runtime config, SDK wiring, release metadata, packaging, or app-owned capabilities.
 
 - App key: `sdkwork-membership-pc`
 - App type: `APP_REACT`
@@ -36,7 +36,7 @@ This is the PC web application for the SDKWork Membership capability. It consume
 ## Local Dictionary Structure
 
 - `AGENTS.md`: agent execution rules for this PC application root.
-- `sdkwork.app.config.json`: PC application identity, metadata, and runtime config.
+- `agent.app.config.json`: PC application identity, metadata, and runtime config.
 - `packages/`: React packages for membership UI surfaces (`sdkwork-membership-pc-membership`, `sdkwork-membership-pc-common`).
 - `specs/`: application-level spec systems when present.
 - `docs/`: application-local documentation when present.
@@ -46,7 +46,7 @@ This is the PC web application for the SDKWork Membership capability. It consume
 Standards are resolved in this order:
 
 1. Current or nearest `AGENTS.md` (this file).
-2. `sdkwork.app.config.json` when present.
+2. `agent.app.config.json` when present.
 3. Nearest module `specs/README.md` and `specs/component.spec.json` when the task touches an authored package.
 4. Repository root `AGENTS.md` at `../../AGENTS.md` for repository-wide rules.
 5. Global `sdkwork-specs/README.md` through the declared relative path.
@@ -96,7 +96,7 @@ Record commands and outputs. Run `pnpm verify` from the repository root before c
 
 ## Agent Execution Rules
 
-- Load this `AGENTS.md` and `sdkwork.app.config.json` first, then only the task-specific specs from `../../../sdkwork-specs/`.
+- Load this `AGENTS.md` and `agent.app.config.json` first, then only the task-specific specs from `../../../sdkwork-specs/`.
 - Stop and report when relative `sdkwork-specs` paths do not resolve.
 - Consume the membership `app-api` through generated SDK clients; do not hand-roll API calls.
 - Do not introduce legacy envelopes or `requestId` wire fields in frontend code.

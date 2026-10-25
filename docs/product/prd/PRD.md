@@ -156,7 +156,7 @@ Authority:
 - Product application roots compose the order-owned checkout service/UI with the membership checkout port.
 - The PC subscription dashboard uses membership-owned default payment-method options for order checkout selection and does not depend on `sdkwork-payment` frontend or service packages.
 - The standalone membership PC runtime configures only `VITE_SDKWORK_MEMBERSHIP_PC_APP_API_BASE_URL`.
-- `apps/sdkwork-membership-pc/sdkwork.app.config.json` `envBindings` is the source of truth for the membership SDK base URL key.
+- `apps/sdkwork-membership-pc/agent.app.config.json` `envBindings` is the source of truth for the membership SDK base URL key.
 - Order runtime configuration belongs to the product application composition root, not the membership application.
 - `orders.payments.create` returns cashier/payment parameters from order/payment.
 - Order settlement calls Membership once; Membership reserves and activates the paid period and entitlements atomically and replays by source order without duplicate effects.

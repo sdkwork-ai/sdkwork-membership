@@ -239,7 +239,7 @@ PC runtime SDK base URL binding:
 VITE_SDKWORK_MEMBERSHIP_PC_APP_API_BASE_URL -> @sdkwork/membership-app-sdk
 ```
 
-`apps/sdkwork-membership-pc/sdkwork.app.config.json` owns the schema-v2 `envBindings` contract for the membership Vite key. The manifest records `backend.appId = sdkwork-membership-pc`, `preset = vite-react-standard`, and the membership SDK base URL mapping. Tracked `.env.example` files and shell bootstrap must stay aligned with that manifest contract.
+`apps/sdkwork-membership-pc/agent.app.config.json` owns the schema-v2 `envBindings` contract for the membership Vite key. The manifest records `backend.appId = sdkwork-membership-pc`, `preset = vite-react-standard`, and the membership SDK base URL mapping. Tracked `.env.example` files and shell bootstrap must stay aligned with that manifest contract.
 
 The membership PC shell does not bootstrap an order SDK and does not declare an order SDK base URL. This repository does not declare `VITE_SDKWORK_MEMBERSHIP_PC_SDK_BASE_URL` or any other common SDK base URL fallback. Product applications own their order runtime configuration and inject checkout through the membership port.
 

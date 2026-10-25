@@ -21,7 +21,7 @@ Do not copy root standard text into this repository. If these relative paths do 
 
 ## Application Identity
 
-Read `sdkwork.app.config.json` only when changing Settings application behavior, runtime config, SDK wiring, release metadata, packaging, app-owned capabilities, or deployment metadata.
+Read `agent.app.config.json` only when changing Settings application behavior, runtime config, SDK wiring, release metadata, packaging, app-owned capabilities, or deployment metadata.
 
 - Domain: `commerce`
 - Capability: `membership`
@@ -65,7 +65,7 @@ Authority: `specs/commerce-order-membership-boundary.spec.json`, `specs/COMMERCE
 ## Local Dictionary Structure
 
 - `AGENTS.md`: agent execution rules and relative spec entrypoint.
-- `sdkwork.app.config.json`: application identity, app metadata, release surfaces, and owned capabilities.
+- `agent.app.config.json`: application identity, app metadata, release surfaces, and owned capabilities.
 - `etc/`: deployable-root source configuration and typed standalone/cloud profile authority.
 - `.sdkwork/`: local skills, plugins, manifests, and repository/application AI workspace metadata.
 - `specs/`: repository/application root specs for cross-module machine contracts.
@@ -73,7 +73,7 @@ Authority: `specs/commerce-order-membership-boundary.spec.json`, `specs/COMMERCE
 - `apis/`: OpenAPI authorities for `app-api`.
 - `sdks/`: SDK families, OpenAPI authorities, derived generator inputs, route manifests, family-root `sdk-manifest.json`, and generated outputs.
 - `crates/`: Rust workspace members (service, repository-sqlx, route crates, database-host, service-host, standalone-gateway, gateway-assembly).
-- `apps/sdkwork-membership-pc/`: PC web application root with its own `sdkwork.app.config.json`.
+- `apps/sdkwork-membership-pc/`: PC web application root with its own `agent.app.config.json`.
 - `database/`: DDL baselines, migrations, seeds, and contract registry.
 - `package.json`: pnpm scripts and dev dependencies for the workspace root.
 
@@ -82,7 +82,7 @@ Authority: `specs/commerce-order-membership-boundary.spec.json`, `specs/COMMERCE
 Standards are resolved in this order:
 
 1. Current or nearest `AGENTS.md`.
-2. `sdkwork.app.config.json` when present.
+2. `agent.app.config.json` when present.
 3. Nearest module `specs/README.md` and `specs/component.spec.json` when the task touches an authored module.
 4. Repository/application root `specs/` when the task is repository-wide or application-wide.
 5. Local `.sdkwork/README.md`, `.sdkwork/skills/`, and `.sdkwork/plugins/` when relevant.
@@ -165,7 +165,7 @@ Record commands and outputs. Run `pnpm verify` and `cargo test --workspace` befo
 
 ## Agent Execution Rules
 
-- Load `AGENTS.md` and `sdkwork.app.config.json` first, then only the task-specific specs from `../sdkwork-specs/`.
+- Load `AGENTS.md` and `agent.app.config.json` first, then only the task-specific specs from `../sdkwork-specs/`.
 - Stop and report when relative `sdkwork-specs` paths do not resolve.
 - Do not fork `sdkwork-web-framework` interceptor chains or request-context framework locally.
 - Do not introduce legacy envelopes or `requestId` wire fields.

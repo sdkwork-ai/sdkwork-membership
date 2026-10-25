@@ -338,7 +338,7 @@ test("membership PC runtime config does not use unregistered common SDK base URL
 });
 
 test("membership PC app manifest owns Vite SDK base URL env bindings", () => {
-  const appManifest = readJson("apps/sdkwork-membership-pc/sdkwork.app.config.json");
+  const appManifest = readJson("apps/sdkwork-membership-pc/agent.app.config.json");
   const shellComponent = readJson("apps/sdkwork-membership-pc/packages/sdkwork-membership-pc-shell/specs/component.spec.json");
   const envExample = readRelative("apps/sdkwork-membership-pc/.env.example");
   const prdSource = readRelative("docs/product/prd/PRD.md");
@@ -397,12 +397,12 @@ test("membership PC app manifest owns Vite SDK base URL env bindings", () => {
     "manifest must not reintroduce the retired common SDK base URL fallback",
   );
   assert.equal(
-    prdSource.includes("`apps/sdkwork-membership-pc/sdkwork.app.config.json` `envBindings` is the source of truth for the membership SDK base URL key."),
+    prdSource.includes("`apps/sdkwork-membership-pc/agent.app.config.json` `envBindings` is the source of truth for the membership SDK base URL key."),
     true,
     "PRD must document manifest-owned Vite SDK base URL binding",
   );
   assert.equal(
-    techSource.includes("`apps/sdkwork-membership-pc/sdkwork.app.config.json` owns the schema-v2 `envBindings` contract for the membership Vite key."),
+    techSource.includes("`apps/sdkwork-membership-pc/agent.app.config.json` owns the schema-v2 `envBindings` contract for the membership Vite key."),
     true,
     "technical architecture must document manifest-owned envBindings",
   );
