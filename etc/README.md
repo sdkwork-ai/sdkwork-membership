@@ -22,8 +22,8 @@ those lifecycle tiers are used.
 
 The standalone gateway reads `SDKWORK_MEMBERSHIP_APPLICATION_PUBLIC_INGRESS_BIND`. Database
 connection identity and lifecycle settings use only the shared `SDKWORK_DATABASE_*` contract.
-Development credentials come from ignored `.env.postgres`, initialized from
-`.env.postgres.example`; production credentials are injected by the deployment platform or a
+Development credentials come from ignored `config/host/postgres.env`, initialized from
+`config/host/postgres.env.example`; production credentials are injected by the deployment platform or a
 protected secret file. No tracked profile contains a token, password, private key, or API key.
 
 Installed runtime configuration is materialized under the platform path governed by
