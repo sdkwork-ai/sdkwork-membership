@@ -1229,6 +1229,7 @@ async fn delete_admin_membership_package_group(
     command: DeleteAdminMembershipPackageGroupCommand,
 ) -> AppMembershipResult<bool> {
     let tenant_id = tenant_id_text(command.subject.tenant_id);
+    let organization_id = organization_id_text(command.subject.organization_id);
     let result = sqlx::query(
         r#"
         UPDATE membership_package_group
@@ -1236,11 +1237,13 @@ async fn delete_admin_membership_package_group(
             updated_at = $2::timestamptz
         WHERE tenant_id = $3
           AND (id = $1 OR group_no = $1)
+          AND (organization_id = $4 OR organization_id = '0')
         "#,
     )
     .bind(&command.package_group_id)
     .bind(&command.requested_at)
     .bind(&tenant_id)
+    .bind(&organization_id)
     .execute(pool)
     .await
     .map_err(|error| store_error("failed to delete membership package group", error))?;
@@ -1472,6 +1475,7 @@ async fn delete_admin_membership_package(
     command: DeleteAdminMembershipPackageCommand,
 ) -> AppMembershipResult<bool> {
     let tenant_id = tenant_id_text(command.subject.tenant_id);
+    let organization_id = organization_id_text(command.subject.organization_id);
     let result = sqlx::query(
         r#"
         UPDATE membership_package
@@ -1479,11 +1483,13 @@ async fn delete_admin_membership_package(
             updated_at = $2::timestamptz
         WHERE tenant_id = $3
           AND (id = $1 OR package_no = $1)
+          AND (organization_id = $4 OR organization_id = '0')
         "#,
     )
     .bind(&command.package_id)
     .bind(&command.requested_at)
     .bind(&tenant_id)
+    .bind(&organization_id)
     .execute(pool)
     .await
     .map_err(|error| store_error("failed to delete membership package", error))?;
@@ -1973,11 +1979,16 @@ async fn replace_admin_plan_benefits(
     benefits: &[AppMembershipBenefitItem],
     requested_at: &str,
 ) -> AppMembershipResult<()> {
-    sqlx::query("DELETE FROM membership_plan_benefit WHERE plan_version_id = $1")
-        .bind(plan_version_id)
-        .execute(pool)
-        .await
-        .map_err(|error| store_error("failed to clear membership plan benefits", error))?;
+    sqlx::query(
+        "DELETE FROM membership_plan_benefit \
+         WHERE plan_version_id = $1 AND tenant_id = $2 AND organization_id = $3",
+    )
+    .bind(plan_version_id)
+    .bind(tenant_id)
+    .bind(organization_id)
+    .execute(pool)
+    .await
+    .map_err(|error| store_error("failed to clear membership plan benefits", error))?;
     for (index, benefit) in benefits.iter().enumerate() {
         let benefit_code = admin_benefit_code(benefit, index + 1);
         let benefit_id = membership_benefit_definition_id_for_code(&benefit_code);
