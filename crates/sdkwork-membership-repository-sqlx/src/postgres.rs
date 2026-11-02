@@ -933,12 +933,14 @@ async fn update_admin_membership_plan(
     command: UpdateAdminMembershipPlanCommand,
 ) -> AppMembershipResult<AdminMembershipPlanItem> {
     let tenant_id = tenant_id_text(command.subject.tenant_id);
+    let organization_id = organization_id_text(command.subject.organization_id);
     let row = sqlx::query(
         r#"
         SELECT id
         FROM membership_plan
         WHERE tenant_id = $1
           AND (id = $2 OR plan_no = $3)
+          AND (organization_id = $4 OR organization_id = '0')
         ORDER BY CASE WHEN id = $2 THEN 0 ELSE 1 END
         LIMIT 1
         "#,
@@ -946,6 +948,7 @@ async fn update_admin_membership_plan(
     .bind(&tenant_id)
     .bind(&command.plan_id)
     .bind(&command.input.code)
+    .bind(&organization_id)
     .fetch_optional(pool)
     .await
     .map_err(sql_error)?
@@ -972,6 +975,7 @@ async fn update_admin_membership_plan(
             updated_at = $6::timestamptz
         WHERE id = $7
           AND tenant_id = $8
+          AND (organization_id = $9 OR organization_id = '0')
         "#,
     )
     .bind(&command.input.code)
@@ -982,6 +986,7 @@ async fn update_admin_membership_plan(
     .bind(&command.requested_at)
     .bind(&plan_id)
     .bind(&tenant_id)
+    .bind(&organization_id)
     .execute(pool)
     .await
     .map_err(|error| store_error("failed to update membership plan", error))?;
@@ -1392,11 +1397,13 @@ async fn update_admin_membership_package(
         FROM membership_package
         WHERE tenant_id = $1
           AND (id = $2 OR package_no = $2)
+          AND (organization_id = $3 OR organization_id = '0')
         LIMIT 1
         "#,
     )
     .bind(&tenant_id)
     .bind(&command.package_id)
+    .bind(&organization_id)
     .fetch_optional(pool)
     .await
     .map_err(sql_error)?
@@ -1435,6 +1442,7 @@ async fn update_admin_membership_package(
             updated_at = $13::timestamptz
         WHERE id = $14
           AND tenant_id = $15
+          AND (organization_id = $16 OR organization_id = '0')
         "#,
     )
     .bind(&command.input.code)
@@ -1452,6 +1460,7 @@ async fn update_admin_membership_package(
     .bind(&command.requested_at)
     .bind(&package_id)
     .bind(&tenant_id)
+    .bind(&organization_id)
     .execute(pool)
     .await
     .map_err(|error| store_error("failed to update membership package", error))?;

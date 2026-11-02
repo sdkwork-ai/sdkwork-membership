@@ -196,23 +196,25 @@ fn seeds_cover_membership_flows_without_order_or_payment_rows() {
 
 #[test]
 fn point_queries_use_tenant_scoped_account_tables() {
-    assert!(POSTGRES_SOURCE.contains("FROM membership_points_account\n"));
-    assert!(POSTGRES_SOURCE.contains("FROM membership_points_ledger\n"));
-    assert!(POSTGRES_SOURCE.contains("owner_type = 'USER'"));
-    assert!(POSTGRES_SOURCE.contains("tenant_id = CAST($1 AS BIGINT)"));
-    assert!(POSTGRES_SOURCE.contains("organization_id = CAST($2 AS BIGINT)"));
-    assert!(POSTGRES_SOURCE.contains("owner_id = CAST($3 AS BIGINT)"));
-    assert!(!POSTGRES_SOURCE.contains("membership_points_ledger_entry"));
+    let source = POSTGRES_SOURCE.replace("\r\n", "\n");
+    assert!(source.contains("FROM membership_points_account\n"));
+    assert!(source.contains("FROM membership_points_ledger\n"));
+    assert!(source.contains("owner_type = 'USER'"));
+    assert!(source.contains("tenant_id = CAST($1 AS BIGINT)"));
+    assert!(source.contains("organization_id = CAST($2 AS BIGINT)"));
+    assert!(source.contains("owner_id = CAST($3 AS BIGINT)"));
+    assert!(!source.contains("membership_points_ledger_entry"));
 }
 
 #[test]
 fn plan_rank_and_storage_id_queries_keep_distinct_bindings() {
-    assert!(POSTGRES_SOURCE.contains("AND CAST(p.rank AS INTEGER) = $3"));
-    assert!(POSTGRES_SOURCE.contains("WHERE p.id = $1"));
-    assert!(POSTGRES_SOURCE.contains(
+    let source = POSTGRES_SOURCE.replace("\r\n", "\n");
+    assert!(source.contains("AND CAST(p.rank AS INTEGER) = $3"));
+    assert!(source.contains("WHERE p.id = $1"));
+    assert!(source.contains(
         "let rows = sqlx::query(LOAD_MEMBERSHIP_PLAN_BY_RANK)\n        .bind(DEFAULT_CATALOG_TENANT_ID)\n        .bind(DEFAULT_CATALOG_ORGANIZATION_ID)\n        .bind(rank)",
     ));
-    assert!(POSTGRES_SOURCE.contains(
+    assert!(source.contains(
         "let rows = sqlx::query(LOAD_MEMBERSHIP_PLAN_BY_STORAGE_ID)\n        .bind(&package.plan_storage_id)",
     ));
 }
