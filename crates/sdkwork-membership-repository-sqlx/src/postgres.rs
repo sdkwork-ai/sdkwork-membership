@@ -77,9 +77,9 @@ JOIN membership_package_group g
     ON g.id = p.package_group_id
 LEFT JOIN membership_plan l
     ON l.id = p.plan_id
-WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+WHERE (p.tenant_id = CAST($1 AS TEXT))
   AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
-  AND (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id IS NULL)
+  AND (g.tenant_id = CAST($1 AS TEXT))
   AND (g.organization_id = CAST($2 AS TEXT) OR g.organization_id = '0')
   AND p.status = 'active'
   AND g.status = 'active'
@@ -114,9 +114,9 @@ JOIN membership_package_group g
     ON g.id = p.package_group_id
 LEFT JOIN membership_plan l
     ON l.id = p.plan_id
-WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id = CAST($4 AS TEXT) OR p.tenant_id IS NULL)
+WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id = CAST($4 AS TEXT))
   AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = CAST($5 AS TEXT) OR p.organization_id = '0')
-  AND (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id = CAST($4 AS TEXT) OR g.tenant_id IS NULL)
+  AND (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id = CAST($4 AS TEXT))
   AND (g.organization_id = CAST($2 AS TEXT) OR g.organization_id = CAST($5 AS TEXT) OR g.organization_id = '0')
   AND p.external_id = $3
   AND p.status = 'active'
@@ -160,7 +160,7 @@ LEFT JOIN membership_plan_benefit b
 LEFT JOIN membership_benefit_definition d
     ON d.id = b.benefit_id
    AND d.tenant_id = b.tenant_id
-WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+WHERE (p.tenant_id = CAST($1 AS TEXT))
   AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
   AND p.status = 'active'
   AND CAST(p.rank AS INTEGER) = $3
@@ -216,7 +216,7 @@ LEFT JOIN membership_plan l
 LEFT JOIN membership_package pkg
     ON pkg.id = m.package_id
 WHERE m.tenant_id = CAST($1 AS TEXT)
-  AND (m.organization_id IS NULL OR m.organization_id = '0' OR m.organization_id = CAST($2 AS TEXT))
+  AND (m.organization_id = '0' OR m.organization_id = CAST($2 AS TEXT))
   AND m.subject_type = 'user'
   AND m.subject_id = CAST($3 AS TEXT)
 ORDER BY m.created_at DESC, m.id DESC
@@ -229,7 +229,7 @@ SELECT
     CAST(frozen_amount AS TEXT) AS frozen_amount
 FROM membership_points_account
 WHERE tenant_id = CAST($1 AS BIGINT)
-  AND (organization_id IS NULL OR organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
+  AND (organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
   AND owner_type = 'USER'
   AND owner_id = CAST($3 AS BIGINT)
   AND asset_code = $4
@@ -251,7 +251,7 @@ SELECT
     CAST(created_at AS TEXT) AS created_at
 FROM membership_points_ledger
 WHERE tenant_id = CAST($1 AS BIGINT)
-  AND (organization_id IS NULL OR organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
+  AND (organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
   AND owner_type = 'USER'
   AND owner_id = CAST($3 AS BIGINT)
   AND asset_code = $4
@@ -271,7 +271,7 @@ SELECT
     CAST(created_at AS TEXT) AS created_at
 FROM membership_points_ledger
 WHERE tenant_id = CAST($1 AS BIGINT)
-  AND (organization_id IS NULL OR organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
+  AND (organization_id = 0 OR organization_id = CAST($2 AS BIGINT))
   AND owner_type = 'USER'
   AND owner_id = CAST($3 AS BIGINT)
   AND asset_code = $4
@@ -1514,7 +1514,7 @@ async fn list_admin_membership_members(
         FROM membership_subscription m
         LEFT JOIN membership_plan l ON l.id = m.plan_id
         WHERE m.tenant_id = CAST($1 AS TEXT)
-          AND ($2 IS NULL OR m.organization_id IS NULL OR m.organization_id = CAST($2 AS TEXT) OR (CAST($2 AS TEXT) != '0' AND m.organization_id = '0'))
+          AND (m.organization_id = CAST($2 AS TEXT) OR (CAST($2 AS TEXT) != '0' AND m.organization_id = '0'))
           AND ($3 IS NULL OR m.owner_user_id = $3 OR m.subject_id = $3)
           AND ($4 IS NULL OR m.plan_id = $4 OR l.plan_no = $4)
           AND ($5 IS NULL OR m.status = $5)
@@ -1536,7 +1536,7 @@ async fn list_admin_membership_members(
         FROM membership_subscription m
         LEFT JOIN membership_plan l ON l.id = m.plan_id
         WHERE m.tenant_id = CAST($1 AS TEXT)
-          AND ($2 IS NULL OR m.organization_id IS NULL OR m.organization_id = CAST($2 AS TEXT) OR (CAST($2 AS TEXT) != '0' AND m.organization_id = '0'))
+          AND (m.organization_id = CAST($2 AS TEXT) OR (CAST($2 AS TEXT) != '0' AND m.organization_id = '0'))
           AND ($3 IS NULL OR m.owner_user_id = $3 OR m.subject_id = $3)
           AND ($4 IS NULL OR m.plan_id = $4 OR l.plan_no = $4)
           AND ($5 IS NULL OR m.status = $5)
@@ -1571,7 +1571,7 @@ async fn update_admin_membership_member_status(
         SET status = $1,
             updated_at = $2::timestamptz
         WHERE tenant_id = CAST($3 AS TEXT)
-          AND ($4 = 0 OR organization_id IS NULL OR organization_id = CAST($4 AS TEXT) OR organization_id = '0')
+          AND (organization_id = CAST($4 AS TEXT) OR organization_id = '0')
           AND id = $5
         "#,
     )
@@ -1807,7 +1807,7 @@ async fn load_admin_membership(
         FROM membership_subscription m
         LEFT JOIN membership_plan l ON l.id = m.plan_id
         WHERE m.tenant_id = CAST($1 AS TEXT)
-          AND ($2 = 0 OR m.organization_id IS NULL OR m.organization_id = CAST($2 AS TEXT) OR m.organization_id = '0')
+          AND (m.organization_id = CAST($2 AS TEXT) OR m.organization_id = '0')
           AND m.id = $3
         LIMIT 1
         "#,
@@ -2552,7 +2552,7 @@ async fn load_benefits_page(
             ON b.plan_version_id = v.id
            AND b.tenant_id = p.tenant_id
            AND b.status = 'active'
-        WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+        WHERE (p.tenant_id = CAST($1 AS TEXT))
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.status = 'active'
           AND CAST(p.rank AS INTEGER) = $3
@@ -2587,7 +2587,7 @@ async fn load_benefits_page(
         LEFT JOIN membership_benefit_definition d
             ON d.id = b.benefit_id
            AND d.tenant_id = b.tenant_id
-        WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+        WHERE (p.tenant_id = CAST($1 AS TEXT))
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.status = 'active'
           AND CAST(p.rank AS INTEGER) = $3
@@ -2644,7 +2644,7 @@ async fn load_plans_page(
         r#"
         SELECT COUNT(*)
         FROM membership_plan p
-        WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+        WHERE (p.tenant_id = CAST($1 AS TEXT))
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.status = 'active'
           AND ($3 IS NULL OR p.category = $3)
@@ -2661,7 +2661,7 @@ async fn load_plans_page(
         r#"
         SELECT p.id
         FROM membership_plan p
-        WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+        WHERE (p.tenant_id = CAST($1 AS TEXT))
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.status = 'active'
           AND ($3 IS NULL OR p.category = $3)
@@ -2969,7 +2969,7 @@ async fn load_package_groups_page(
         r#"
         SELECT COUNT(*)
         FROM membership_package_group g
-        WHERE (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id IS NULL)
+        WHERE (g.tenant_id = CAST($1 AS TEXT))
           AND (g.organization_id = CAST($2 AS TEXT) OR g.organization_id = '0')
           AND g.status = 'active'
           AND ($5 IS NULL OR g.category = $5)
@@ -2978,7 +2978,7 @@ async fn load_package_groups_page(
             FROM membership_package p
             LEFT JOIN membership_plan l ON l.id = p.plan_id
             WHERE p.package_group_id = g.id
-              AND (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+              AND (p.tenant_id = CAST($1 AS TEXT))
               AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
               AND ($3 = false OR p.recommended != 0)
               AND ($4::bigint IS NULL OR l.rank = $4)
@@ -3003,7 +3003,7 @@ async fn load_package_groups_page(
             CAST(COALESCE(g.sort_weight, 0) AS INTEGER) AS sort_weight,
             g.category AS category
         FROM membership_package_group g
-        WHERE (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id IS NULL)
+        WHERE (g.tenant_id = CAST($1 AS TEXT))
           AND (g.organization_id = CAST($2 AS TEXT) OR g.organization_id = '0')
           AND g.status = 'active'
           AND ($7 IS NULL OR g.category = $7)
@@ -3012,7 +3012,7 @@ async fn load_package_groups_page(
             FROM membership_package p
             LEFT JOIN membership_plan l ON l.id = p.plan_id
             WHERE p.package_group_id = g.id
-              AND (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+              AND (p.tenant_id = CAST($1 AS TEXT))
               AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
               AND ($5 = false OR p.recommended != 0)
               AND ($6::bigint IS NULL OR l.rank = $6)
@@ -3078,7 +3078,7 @@ async fn load_package_group_by_id(
             CAST(COALESCE(g.sort_weight, 0) AS INTEGER) AS sort_weight,
             g.category AS category
         FROM membership_package_group g
-        WHERE (g.tenant_id = CAST($1 AS TEXT) OR g.tenant_id IS NULL)
+        WHERE (g.tenant_id = CAST($1 AS TEXT))
           AND (g.organization_id = CAST($2 AS TEXT) OR g.organization_id = '0')
           AND g.external_id = $3
           AND g.status = 'active'
@@ -3422,7 +3422,7 @@ async fn load_purchase_outcome_by_idempotency(
             ms.status AS subscription_status
         FROM membership_subscription ms
         WHERE ms.tenant_id = CAST($1 AS TEXT)
-          AND (ms.organization_id IS NULL OR ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
+          AND (ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
           AND ms.owner_user_id = CAST($3 AS TEXT)
           AND ms.idempotency_key = $4
         ORDER BY ms.created_at DESC
@@ -3573,7 +3573,7 @@ async fn fulfill_paid_purchase_by_order(
               ON ms.tenant_id = mp.tenant_id
              AND ms.id = mp.subscription_id
             WHERE ms.tenant_id = CAST($1 AS TEXT)
-              AND (ms.organization_id IS NULL OR ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
+              AND (ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
               AND ms.owner_user_id = CAST($3 AS TEXT)
               AND mp.source_order_id = $4
         )
@@ -3638,7 +3638,7 @@ async fn activate_membership_purchase(
           ON ms.tenant_id = mp.tenant_id
          AND ms.id = mp.subscription_id
         WHERE ms.tenant_id = CAST($1 AS TEXT)
-          AND (ms.organization_id IS NULL OR ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
+          AND (ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
           AND ms.owner_user_id = CAST($3 AS TEXT)
           AND mp.source_order_id = $4
         ORDER BY mp.created_at DESC
@@ -3883,7 +3883,7 @@ async fn validate_coupon_package_postgres(
         r#"
         SELECT COUNT(1)
         FROM membership_package p
-        WHERE (p.tenant_id = CAST($1 AS TEXT) OR p.tenant_id IS NULL)
+        WHERE (p.tenant_id = CAST($1 AS TEXT))
           AND (p.organization_id = CAST($2 AS TEXT) OR p.organization_id = '0')
           AND p.external_id = $3
           AND p.duration_days = $4
@@ -4030,7 +4030,7 @@ async fn load_fulfillment_outcome_by_idempotency(
           ON ms.tenant_id = mp.tenant_id
          AND ms.id = mp.subscription_id
         WHERE ms.tenant_id = CAST($1 AS TEXT)
-          AND (ms.organization_id IS NULL OR ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
+          AND (ms.organization_id = '0' OR ms.organization_id = CAST($2 AS TEXT))
           AND ms.owner_user_id = CAST($3 AS TEXT)
           AND mp.source_order_id = $4
           AND mp.status = 'active'
@@ -4125,7 +4125,7 @@ async fn persist_membership_subscription(
                 updated_at = $11::timestamptz
             WHERE id = $12
               AND tenant_id = CAST($13 AS TEXT)
-              AND (organization_id IS NULL OR organization_id = '0' OR organization_id = CAST($14 AS TEXT))
+              AND (organization_id = '0' OR organization_id = CAST($14 AS TEXT))
               AND subject_type = 'user'
               AND subject_id = CAST($15 AS TEXT)
             "#,
@@ -4693,7 +4693,7 @@ async fn recharge_subscription_quota(
         FROM membership_entitlement_account a
         JOIN membership_benefit_definition d ON d.tenant_id = a.tenant_id AND d.id = a.benefit_id
         WHERE a.tenant_id = CAST($1 AS TEXT)
-          AND (a.organization_id IS NULL OR a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
+          AND (a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
           AND a.subject_type = 'user'
           AND a.subject_id = CAST($3 AS TEXT)
           AND a.status = 'active'
@@ -4950,7 +4950,7 @@ async fn consume_subscription_quota(
         JOIN membership_benefit_definition d ON d.tenant_id = g.tenant_id AND d.id = g.benefit_id
         JOIN membership_subscription m ON m.tenant_id = g.tenant_id AND m.id = g.source_id
         WHERE g.tenant_id = CAST($1 AS TEXT)
-          AND (g.organization_id IS NULL OR g.organization_id = '0' OR g.organization_id = CAST($2 AS TEXT))
+          AND (g.organization_id = '0' OR g.organization_id = CAST($2 AS TEXT))
           AND g.subject_type = 'user'
           AND g.subject_id = CAST($3 AS TEXT)
           AND g.source_type IN ('membership_subscription', 'membership_quota_recharge')
@@ -5176,7 +5176,7 @@ async fn consume_speed_up(
           ON m.id = g.source_id
          AND m.tenant_id = a.tenant_id
         WHERE a.tenant_id = CAST($1 AS TEXT)
-          AND (a.organization_id IS NULL OR a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
+          AND (a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
           AND a.subject_type = 'user'
           AND a.subject_id = CAST($3 AS TEXT)
           AND a.status = 'active'
@@ -5786,7 +5786,7 @@ async fn load_membership_entitlement_account_usage_postgres(
         JOIN membership_benefit_definition d
           ON d.id = a.benefit_id
         WHERE a.tenant_id = CAST($1 AS TEXT)
-          AND (a.organization_id IS NULL OR a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
+          AND (a.organization_id = '0' OR a.organization_id = CAST($2 AS TEXT))
           AND a.subject_type = 'user'
           AND a.subject_id = CAST($3 AS TEXT)
           AND a.status = 'active'
