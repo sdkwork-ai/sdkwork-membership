@@ -5647,10 +5647,10 @@ async fn claim_daily_reward_postgres(
     };
     let new_total = prev_total + 1;
     let reward_points = daily_reward_points(new_consecutive);
-    let reward_id = format!(
+    let reward_id = stable_membership_i64_id(&format!(
         "daily-reward-{}-{}-{}",
         subject.tenant_id, subject.user_id, today
-    );
+    ));
     let reward_uuid = format!("dr-{}-{}-{}", subject.tenant_id, subject.user_id, today);
     let idempotency_key = format!(
         "daily-reward-{}-{}-{}",
@@ -5662,11 +5662,11 @@ async fn claim_daily_reward_postgres(
         INSERT INTO membership_daily_reward
             (id, uuid, tenant_id, organization_id, user_id, reward_date,
              reward_points, consecutive_days, total_days, status, idempotency_key, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'claimed', $10::timestamptz, $11::timestamptz)
+        VALUES ($1, $2, $3, $4, $5, CAST($6 AS DATE), $7, $8, $9, 'claimed', $10::timestamptz, $11::timestamptz)
         ON CONFLICT (tenant_id, user_id, reward_date) DO NOTHING
         "#,
     )
-    .bind(&reward_id)
+    .bind(reward_id)
     .bind(&reward_uuid)
     .bind(subject.tenant_id)
     .bind(subject.organization_id)
