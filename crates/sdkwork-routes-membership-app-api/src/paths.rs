@@ -43,3 +43,15 @@ pub const PRIVILEGE_USAGE: &str = "/privileges/usage";
 
 /// Submit purchase: `POST /app/v3/api/memberships/purchases`
 pub const PURCHASES: &str = "/purchases";
+
+/// Team subscription overview: `GET /app/v3/api/memberships/team/subscription`
+pub const TEAM_SUBSCRIPTION: &str = "/team/subscription";
+
+/// Team seat directory: `GET /app/v3/api/memberships/team/seats`
+pub const TEAM_SEATS: &str = "/team/seats";
+
+/// Team seat assignment: `DELETE /app/v3/api/memberships/team/seats/:userId`
+pub const TEAM_SEAT_DETAIL: &str = "/team/seats/:userId";
+
+/// Team seat policy: `PATCH /app/v3/api/memberships/team/seats/policy`
+pub const TEAM_SEAT_POLICY: &str = "/team/seats/policy";

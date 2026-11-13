@@ -1,10 +1,12 @@
 use sdkwork_contract_service::{CommerceServiceError, CommerceSurfaceProfile};
 use sdkwork_membership_service::{
-    membership_service_contract, EntitlementGrantDraft, MembershipActivationDraft,
-    MembershipBillingCycle, MembershipCategory, MembershipPackageDraft,
-    MembershipPackageGroupDraft, MembershipPackageGroupDraftInput, MembershipPackageGroupListQuery,
-    MembershipPackageListQuery, MembershipPlanDraft, MembershipPortRequirement,
-    MembershipPurchaseDraft, MembershipRepositoryCommand, MembershipStatus, MembershipTransition,
+    allocate_team_seat_number, membership_service_contract, validate_team_seat_policy_transition,
+    EntitlementGrantDraft, MembershipActivationDraft, MembershipAudience, MembershipBillingCycle,
+    MembershipCategory, MembershipPackageDraft, MembershipPackageGroupDraft,
+    MembershipPackageGroupDraftInput, MembershipPackageGroupListQuery, MembershipPackageListQuery,
+    MembershipPlanDraft, MembershipPortRequirement, MembershipPurchaseDraft,
+    MembershipRepositoryCommand, MembershipSeatPolicy, MembershipStatus, MembershipTransition,
+    TeamSeatAssignmentDraft, TeamSeatPolicyDraft,
 };
 
 #[test]
@@ -374,6 +376,8 @@ fn membership_service_contract_exposes_membership_package_catalog_operations() {
         "memberships.points.history.list",
         "memberships.points.dailyRewards.status.retrieve",
         "memberships.privileges.usage.retrieve",
+        "memberships.team.subscription.retrieve",
+        "memberships.team.seats.list",
     ] {
         assert!(
             contract.read_queries.contains(&query),
@@ -387,10 +391,81 @@ fn membership_service_contract_exposes_membership_package_catalog_operations() {
         "memberships.purchases.upgrade",
         "memberships.points.dailyRewards.create",
         "memberships.privileges.speedUps.create",
+        "memberships.team.seats.create",
+        "memberships.team.seats.delete",
+        "memberships.team.seats.policy.update",
     ] {
         assert!(
             contract.write_commands.contains(&command),
             "membership contract must expose write command {command}",
         );
     }
+}
+
+#[test]
+fn membership_audience_vocabulary_is_personal_and_team() {
+    assert_eq!(MembershipAudience::Personal.as_storage_str(), "personal");
+    assert_eq!(MembershipAudience::Team.as_storage_str(), "team");
+    assert_eq!(
+        MembershipAudience::parse(" TEAM ").unwrap(),
+        MembershipAudience::Team
+    );
+    assert!(MembershipAudience::parse("company").is_err());
+    assert_eq!(MembershipAudience::Personal.to_string(), "personal");
+}
+
+#[test]
+fn membership_seat_policy_vocabulary_is_strict_and_flex_overflow() {
+    assert_eq!(MembershipSeatPolicy::Strict.as_storage_str(), "strict");
+    assert_eq!(
+        MembershipSeatPolicy::FlexOverflow.as_storage_str(),
+        "flex_overflow"
+    );
+    assert_eq!(
+        MembershipSeatPolicy::parse("flex_overflow").unwrap(),
+        MembershipSeatPolicy::FlexOverflow
+    );
+    assert!(MembershipSeatPolicy::parse("overflow").is_err());
+
+    let draft = TeamSeatPolicyDraft::new("strict", false).expect("seat policy draft");
+    assert_eq!(draft.seat_policy, MembershipSeatPolicy::Strict);
+    assert!(!draft.auto_assign_seat);
+    assert!(TeamSeatPolicyDraft::new("lenient", true).is_err());
+}
+
+#[test]
+fn team_seat_allocation_picks_the_lowest_free_seat() {
+    // Lowest free slot inside the licensed range.
+    assert_eq!(
+        allocate_team_seat_number(MembershipSeatPolicy::Strict, 5, 2, &[1, 3]).unwrap(),
+        2
+    );
+    // Gaps are filled before extending the seat numbers.
+    assert_eq!(
+        allocate_team_seat_number(MembershipSeatPolicy::Strict, 5, 4, &[1, 2, 3, 5]).unwrap(),
+        4
+    );
+    // Full licensed capacity still allocates the next seat under flex overflow.
+    assert_eq!(
+        allocate_team_seat_number(MembershipSeatPolicy::FlexOverflow, 3, 3, &[1, 2, 3]).unwrap(),
+        4
+    );
+    // Strict capacity exhaustion is rejected, not silently overflowed.
+    assert_eq!(
+        allocate_team_seat_number(MembershipSeatPolicy::Strict, 3, 3, &[1, 2, 3]).unwrap_err(),
+        CommerceServiceError::conflict("seat_capacity_exceeded")
+    );
+}
+
+#[test]
+fn team_seat_policy_switch_to_strict_requires_capacity() {
+    assert!(validate_team_seat_policy_transition(MembershipSeatPolicy::Strict, 5, 5).is_ok());
+    assert!(validate_team_seat_policy_transition(MembershipSeatPolicy::Strict, 5, 6).is_err());
+    assert!(validate_team_seat_policy_transition(MembershipSeatPolicy::FlexOverflow, 5, 6).is_ok());
+}
+
+#[test]
+fn team_seat_assignment_requires_a_target_user() {
+    assert!(TeamSeatAssignmentDraft::new("42").is_ok());
+    assert!(TeamSeatAssignmentDraft::new("   ").is_err());
 }

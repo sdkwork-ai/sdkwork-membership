@@ -35,19 +35,18 @@ Membership must not store payment intent, payment attempt, cashier, provider, or
 
 ## Initialized Tables
 
-The current baseline and contract initialize 18 membership capability tables.
+The current baseline and contract initialize 17 membership capability tables.
 
 | Table | Owner | Purpose |
 | --- | --- | --- |
-| `membership_product_spu` | sdkwork-membership | Membership catalog SPU rows used by package SKU projection |
-| `membership_product_sku` | sdkwork-membership | Membership package SKU rows and display metadata |
 | `membership_plan` | sdkwork-membership | Membership plan/rank definitions |
 | `membership_plan_version` | sdkwork-membership | Published plan versions |
 | `membership_benefit_definition` | sdkwork-membership | Entitlement/privilege dictionary |
 | `membership_plan_benefit` | sdkwork-membership | Plan-version benefit bindings |
 | `membership_package_group` | sdkwork-membership | Billing-cycle package groups |
 | `membership_package` | sdkwork-membership | Sellable membership packages |
-| `membership_subscription` | sdkwork-membership | User subscription reservation and active-state record |
+| `membership_subscription` | sdkwork-membership | Subscription reservation and active-state record (user or organization subject with seat counters) |
+| `membership_seat_assignment` | sdkwork-membership | Organization subscription seat assignment ledger |
 | `membership_period` | sdkwork-membership | Subscription period reservation and activation record |
 | `membership_entitlement_account` | sdkwork-membership | Per-user entitlement balances and usage counters |
 | `membership_entitlement_grant` | sdkwork-membership | Pending/active entitlement grants from membership fulfillment |
@@ -105,8 +104,8 @@ migrator and reviewed release workflow; application replicas never race schema o
 
 ## Contract Registry
 
-- `contract/schema.yaml` - 18 table contracts registered with profile, compliance level, and owner
-- `contract/table-registry.json` - machine-readable inventory of the 18 initialized tables
+- `contract/schema.yaml` - 17 table contracts registered with profile, compliance level, and owner
+- `contract/table-registry.json` - machine-readable inventory of the 17 initialized tables
 - `contract/prefix-registry.json` - `membership_` bounded-context prefix registration
 - `database.manifest.json` - database module manifest used by `sdkwork-database`
 

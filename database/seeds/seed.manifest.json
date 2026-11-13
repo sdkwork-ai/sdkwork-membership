@@ -21,7 +21,7 @@
     "zh-CN": {
       "version": "1.0.0",
       "required": true,
-      "checksum": "sha256:dc196c56fb1f60152f1e886ebc60d8b8a84969c4d5f3c8226beb9f02d05a842c",
+      "checksum": "sha256:57dd83cf88db36e1639c5cba45b9da46fa4d068bf0c5d47cc034f0d632135a60",
       "files": [
         "locales/zh-CN/001_catalog_locale.sql"
       ]
@@ -29,7 +29,7 @@
     "en-US": {
       "version": "1.0.0",
       "required": true,
-      "checksum": "sha256:e66694b1a248eec552e1cfc386fc062833a92d5c2f28ec0d25b4574230e9e7bc",
+      "checksum": "sha256:e3b03be33dee743f38b5fe1a2f0f321aea36e951a3362ec1bc3fe4e1c7cf9053",
       "files": [
         "locales/en-US/001_catalog_locale.sql"
       ]
@@ -38,7 +38,8 @@
   "profiles": {
     "standard": {
       "common": [
-        "001_catalog.sql"
+        "001_catalog.sql",
+        "002_team_catalog.sql"
       ],
       "locales": {
         "zh-CN": [

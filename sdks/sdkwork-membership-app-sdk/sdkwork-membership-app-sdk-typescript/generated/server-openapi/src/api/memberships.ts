@@ -1,8 +1,73 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory } from '../types';
+import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipAudience, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory, SdkWorkPageDataTeamSeatMembers, TeamSeatAssignmentCommand, TeamSeatAssignmentItem, TeamSeatPolicyCommand, TeamSubscriptionOverview } from '../types';
 
+
+export class MembershipsTeamSeatsPolicyApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Update the organization team subscription seat policy. */
+  async update(body: TeamSeatPolicyCommand, requestOptions?: ApiRequestOptions): Promise<TeamSubscriptionOverview> {
+    return this.client.request<TeamSubscriptionOverview>(appApiPath(`/memberships/team/seats/policy`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'PATCH' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+}
+
+export interface MembershipsTeamSeatsListParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+}
+
+export class MembershipsTeamSeatsApi {
+  private client: HttpClient;
+  public readonly policy: MembershipsTeamSeatsPolicyApi;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+    this.policy = new MembershipsTeamSeatsPolicyApi(client);
+  }
+
+
+/** Organization seat directory (one row per active IAM member). */
+  async list(params?: MembershipsTeamSeatsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataTeamSeatMembers> {
+    const query = buildQueryString([
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<SdkWorkPageDataTeamSeatMembers>(appendQueryString(appApiPath(`/memberships/team/seats`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+
+/** Assign the lowest free seat to an active organization member. */
+  async create(body: TeamSeatAssignmentCommand, requestOptions?: ApiRequestOptions): Promise<TeamSeatAssignmentItem> {
+    return this.client.request<TeamSeatAssignmentItem>(appApiPath(`/memberships/team/seats`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Revoke the active seat assignment of an organization member. */
+  async delete(userId: string, requestOptions?: ApiRequestOptions): Promise<void> {
+    return this.client.request<void>(appApiPath(`/memberships/team/seats/${serializePathParameter(userId, { name: 'userId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'DELETE' as any });
+  }
+}
+
+export class MembershipsTeamSubscriptionApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Current organization team subscription overview. */
+  async retrieve(requestOptions?: ApiRequestOptions): Promise<TeamSubscriptionOverview> {
+    return this.client.request<TeamSubscriptionOverview>(appApiPath(`/memberships/team/subscription`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+}
 
 export class MembershipsAccessChecksApi {
   private client: HttpClient;
@@ -165,12 +230,17 @@ export class MembershipsPurchasesApi {
 
 export interface MembershipsPackagesListParams {
   category?: MembershipCategory;
+  audience?: MembershipAudience;
   status?: string;
   page?: number;
   pageSize?: number;
   packageGroupId?: string;
   planId?: string;
   cursor?: string;
+}
+
+export interface MembershipsPackagesRetrieveParams {
+  audience?: MembershipAudience;
 }
 
 export class MembershipsPackagesApi {
@@ -185,6 +255,7 @@ export class MembershipsPackagesApi {
   async list(params?: MembershipsPackagesListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataPackages> {
     const query = buildQueryString([
       { name: 'category', value: params?.category, style: 'form', explode: true, allowReserved: false },
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
@@ -196,12 +267,16 @@ export class MembershipsPackagesApi {
   }
 
 /** Memberships packages retrieve. */
-  async retrieve(packageId: string, requestOptions?: ApiRequestOptions): Promise<AppMembershipPackageItem> {
-    return this.client.request<AppMembershipPackageItem>(appApiPath(`/memberships/packages/${serializePathParameter(packageId, { name: 'packageId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, skipAuth: true, sdkworkUnwrapKind: 'item' });
+  async retrieve(packageId: string, params?: MembershipsPackagesRetrieveParams, requestOptions?: ApiRequestOptions): Promise<AppMembershipPackageItem> {
+    const query = buildQueryString([
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<AppMembershipPackageItem>(appendQueryString(appApiPath(`/memberships/packages/${serializePathParameter(packageId, { name: 'packageId', style: 'simple', explode: false })}`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, skipAuth: true, sdkworkUnwrapKind: 'item' });
   }
 }
 
 export interface MembershipsPackageGroupsPackagesListParams {
+  audience?: MembershipAudience;
   status?: string;
   page?: number;
   pageSize?: number;
@@ -221,6 +296,7 @@ export class MembershipsPackageGroupsPackagesApi {
 /** Memberships package Groups packages list. */
   async list(packageGroupId: string, params?: MembershipsPackageGroupsPackagesListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataPackages> {
     const query = buildQueryString([
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
@@ -234,12 +310,17 @@ export class MembershipsPackageGroupsPackagesApi {
 
 export interface MembershipsPackageGroupsListParams {
   category?: MembershipCategory;
+  audience?: MembershipAudience;
   status?: string;
   page?: number;
   pageSize?: number;
   planId?: string;
   recommendedOnly?: boolean;
   cursor?: string;
+}
+
+export interface MembershipsPackageGroupsRetrieveParams {
+  audience?: MembershipAudience;
 }
 
 export class MembershipsPackageGroupsApi {
@@ -256,6 +337,7 @@ export class MembershipsPackageGroupsApi {
   async list(params?: MembershipsPackageGroupsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataPackageGroups> {
     const query = buildQueryString([
       { name: 'category', value: params?.category, style: 'form', explode: true, allowReserved: false },
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
@@ -267,13 +349,17 @@ export class MembershipsPackageGroupsApi {
   }
 
 /** Memberships package Groups retrieve. */
-  async retrieve(packageGroupId: string, requestOptions?: ApiRequestOptions): Promise<AppMembershipPackageGroupItem> {
-    return this.client.request<AppMembershipPackageGroupItem>(appApiPath(`/memberships/package_groups/${serializePathParameter(packageGroupId, { name: 'packageGroupId', style: 'simple', explode: false })}`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, skipAuth: true, sdkworkUnwrapKind: 'item' });
+  async retrieve(packageGroupId: string, params?: MembershipsPackageGroupsRetrieveParams, requestOptions?: ApiRequestOptions): Promise<AppMembershipPackageGroupItem> {
+    const query = buildQueryString([
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<AppMembershipPackageGroupItem>(appendQueryString(appApiPath(`/memberships/package_groups/${serializePathParameter(packageGroupId, { name: 'packageGroupId', style: 'simple', explode: false })}`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, skipAuth: true, sdkworkUnwrapKind: 'item' });
   }
 }
 
 export interface MembershipsPlansListParams {
   category?: MembershipCategory;
+  audience?: MembershipAudience;
   status?: string;
   page?: number;
   pageSize?: number;
@@ -292,6 +378,7 @@ export class MembershipsPlansApi {
   async list(params?: MembershipsPlansListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataPlans> {
     const query = buildQueryString([
       { name: 'category', value: params?.category, style: 'form', explode: true, allowReserved: false },
+      { name: 'audience', value: params?.audience, style: 'form', explode: true, allowReserved: false },
       { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
@@ -368,6 +455,8 @@ export class MembershipsApi {
   public readonly points: MembershipsPointsApi;
   public readonly privileges: MembershipsPrivilegesApi;
   public readonly accessChecks: MembershipsAccessChecksApi;
+  public readonly teamSubscription: MembershipsTeamSubscriptionApi;
+  public readonly teamSeats: MembershipsTeamSeatsApi;
 
   constructor(client: HttpClient) {
     this.current = new MembershipsCurrentApi(client);
@@ -379,6 +468,8 @@ export class MembershipsApi {
     this.points = new MembershipsPointsApi(client);
     this.privileges = new MembershipsPrivilegesApi(client);
     this.accessChecks = new MembershipsAccessChecksApi(client);
+    this.teamSubscription = new MembershipsTeamSubscriptionApi(client);
+    this.teamSeats = new MembershipsTeamSeatsApi(client);
   }
 
 }

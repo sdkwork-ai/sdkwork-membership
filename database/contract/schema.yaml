@@ -2,7 +2,7 @@ schema_version: 1
 kind: sdkwork.database.schema
 database_role: authoritative-server
 module_id: membership
-contract_version: 1.0.0
+contract_version: 1.1.0
 owner_team: sdkwork-membership
 compliance_level: L2
 engines:
@@ -55,5 +55,8 @@ tables:
     lifecycle_status: active
     owner: sdkwork-membership
   - name: membership_change_log
+    lifecycle_status: active
+    owner: sdkwork-membership
+  - name: membership_seat_assignment
     lifecycle_status: active
     owner: sdkwork-membership

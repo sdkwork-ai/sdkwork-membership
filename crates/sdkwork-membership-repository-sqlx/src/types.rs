@@ -42,6 +42,40 @@ pub const MEMBERSHIP_SUBSCRIPTION_STATUSES: [&str; 6] = [
     "cancelled",
 ];
 
+/// Catalog audience vocabulary: `personal` catalog rows serve a single user,
+/// `team` rows serve an organization with licensed seats (`API` surface
+/// `audience` query parameter, default `personal`).
+pub const MEMBERSHIP_AUDIENCES: [&str; 2] = ["personal", "team"];
+
+/// Returns true when `value` is a declared catalog audience.
+pub fn is_valid_membership_audience(value: &str) -> bool {
+    MEMBERSHIP_AUDIENCES.contains(&value)
+}
+
+/// Seat policy vocabulary: `strict` refuses assignments beyond
+/// `seats_purchased`, `flex_overflow` allows over-assignment (billable
+/// overflow) while still tracking `seats_used` above the licensed capacity.
+pub const MEMBERSHIP_SEAT_POLICIES: [&str; 2] = ["strict", "flex_overflow"];
+
+/// Returns true when `value` is a declared seat policy.
+pub fn is_valid_membership_seat_policy(value: &str) -> bool {
+    MEMBERSHIP_SEAT_POLICIES.contains(&value)
+}
+
+/// Seat assignment lifecycle vocabulary.
+pub const MEMBERSHIP_SEAT_ASSIGNMENT_STATES: [&str; 2] = ["active", "revoked"];
+
+/// Organization roles projected from the IAM directory port (`membership_kind`).
+///
+/// IAM owns the role; membership only projects it to decide whether the
+/// viewer may manage seats (`owner` | `admin`).
+pub const MEMBERSHIP_TEAM_ROLES: [&str; 3] = ["owner", "admin", "member"];
+
+/// Returns true when the projected IAM role may manage organization seats.
+pub fn membership_role_can_manage_seats(role: &str) -> bool {
+    matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
+}
+
 /// Static catalog enum reference served to admin surfaces as the single
 /// source of truth for dropdown options (kept in sync with the database
 /// CHECK constraints).
@@ -232,15 +266,36 @@ pub struct AppMembershipPackageItem {
     /// Catalog classification of this package (`token` | `community`),
     /// snapshotted from its package group.
     pub category: String,
+    /// Catalog audience of this package (`personal` | `team`).
+    pub audience: String,
     pub name: String,
     pub description: Option<String>,
     pub price: String,
     pub original_price: Option<String>,
+    /// Per-seat pricing mode: `package` (one price for the whole package) or
+    /// `seat` (price is the unit price of one seat for one billing period).
+    pub price_unit: String,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub point_amount: i64,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub duration_days: i64,
     pub plan_name: Option<String>,
+    /// Storage id of the plan this package grants.
+    pub plan_id: String,
+    /// Plan rank as served by `AppMembershipPlanItem.id`.
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub plan_rank: i64,
+    /// Billing recurrence of this package (`once` | `day` | `week` | `month` | `quarter` | `year`).
+    pub recurrence_cycle: Option<String>,
+    /// Minimum purchasable seat quantity for per-seat team packages.
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seat_min: i64,
+    /// Maximum purchasable seat quantity for per-seat team packages.
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seat_max: i64,
+    /// Membership points every assigned seat receives per billing period.
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seat_points_amount: i64,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub sort_weight: i64,
     pub recommended: bool,
@@ -254,8 +309,15 @@ pub struct AppMembershipPackageGroupItem {
     pub id: i64,
     /// Catalog classification of this group (`token` | `community`).
     pub category: String,
+    /// Catalog audience of this group (`personal` | `team`).
+    pub audience: String,
     pub name: String,
     pub description: Option<String>,
+    /// Billing cycle of this group (`once` | `day` | `week` | `month` | `quarter` | `year`).
+    pub billing_cycle: Option<String>,
+    /// Billing duration in days for this group.
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub duration_days: i64,
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub sort_weight: i64,
     pub packages: Vec<AppMembershipPackageItem>,
@@ -336,6 +398,14 @@ pub struct SubmitMembershipPurchaseCommand {
     pub idempotency_key: String,
     pub requested_at: String,
     pub action: String,
+    /// Purchased seat quantity for a team (organization) plan order; `1` for
+    /// every personal purchase. Team fulfillment multiplies the entitlement
+    /// grant quantity by this value.
+    pub seats: i64,
+    /// Raw IAM organization id carried by the order. When absent, the numeric
+    /// organization scope of `subject` is used as the subscription
+    /// `subject_id`.
+    pub organization_subject_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -357,6 +427,12 @@ pub struct FulfillPaidMembershipPurchaseCommand {
     pub idempotency_key: String,
     pub paid_at: String,
     pub action: String,
+    /// Seat quantity from the paid order (team plans). Must be at least 1 and
+    /// is ignored by personal plans, which always license a single seat.
+    pub seats: i64,
+    /// Raw IAM organization id from the paid order. Used as the subscription
+    /// `subject_id` when the purchased plan audience is `team`.
+    pub organization_subject_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
@@ -760,6 +836,128 @@ pub struct UpdateAdminMembershipMemberStatusCommand {
     pub requested_at: String,
 }
 
+/// Read scope for team (organization) seat operations.
+///
+/// `tenant_id` / `organization_id` / `user_id` are the **raw** principal
+/// strings: the organization id is the IAM organization id and is used both
+/// for the IAM directory projection and as the team subscription `subject_id`.
+/// IAM remains the owner of organizations and memberships; membership only
+/// reads them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppMembershipTeamScope {
+    pub tenant_id: String,
+    pub organization_id: String,
+    pub user_id: String,
+}
+
+/// Query for the current organization's team subscription overview.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamSubscriptionQuery {
+    pub scope: AppMembershipTeamScope,
+}
+
+/// Query for the organization seat directory (one row per active IAM member).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamSeatsQuery {
+    pub scope: AppMembershipTeamScope,
+    /// Free-text match on membership display name, IAM username, and email.
+    pub q: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+}
+
+/// Team subscription overview for the current organization.
+///
+/// `has_subscription=false` is a normal 200 response: the organization simply
+/// has no active/pending team subscription yet.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSubscriptionOverview {
+    /// Raw IAM organization id (never a header; resolved from the principal).
+    pub organization_id: String,
+    pub organization_name: Option<String>,
+    pub organization_kind: Option<String>,
+    /// Viewer's IAM organization role (`owner` | `admin` | `member`).
+    pub viewer_role: Option<String>,
+    pub can_manage_seats: bool,
+    pub has_subscription: bool,
+    pub subscription_id: Option<String>,
+    /// Catalog plan id as served by `GET /plans` (the plan rank).
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
+    pub plan_id: Option<i64>,
+    pub plan_name: Option<String>,
+    #[serde(with = "sdkwork_utils_rust::serde_int64::option", default)]
+    pub plan_rank: Option<i64>,
+    pub status: Option<String>,
+    pub starts_at: Option<String>,
+    pub expires_at: Option<String>,
+    pub seats_purchased: i64,
+    pub seats_used: i64,
+    pub seats_available: i64,
+    pub seat_policy: String,
+    pub auto_assign_seat: bool,
+    pub members_total: i64,
+    pub licensed_members: i64,
+    pub unlicensed_members: i64,
+    pub over_seat: bool,
+    pub over_seat_count: i64,
+}
+
+/// One row of the organization seat directory.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSeatMember {
+    /// IAM user id.
+    pub user_id: String,
+    /// IAM organization membership row id.
+    pub membership_id: String,
+    pub display_name: Option<String>,
+    pub email: Option<String>,
+    /// IAM membership kind (`owner` | `admin` | `member`).
+    pub membership_kind: String,
+    pub member_status: Option<String>,
+    /// `active` when a seat is assigned, otherwise `unassigned`.
+    pub seat_state: String,
+    pub seat_no: Option<i64>,
+    pub assigned_at: Option<String>,
+}
+
+/// Result of assigning a seat to an organization member.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSeatAssignmentItem {
+    pub user_id: String,
+    pub seat_no: i64,
+    pub assigned_at: String,
+    pub display_name: Option<String>,
+    pub membership_id: Option<String>,
+}
+
+/// Assign a seat to an active organization member.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignTeamSeatCommand {
+    pub scope: AppMembershipTeamScope,
+    pub target_user_id: String,
+    pub requested_at: String,
+}
+
+/// Revoke the active seat assignment of an organization member.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RevokeTeamSeatCommand {
+    pub scope: AppMembershipTeamScope,
+    pub target_user_id: String,
+    pub requested_at: String,
+}
+
+/// Update the team subscription seat policy / auto-assign flag.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateTeamSeatPolicyCommand {
+    pub scope: AppMembershipTeamScope,
+    pub seat_policy: String,
+    pub auto_assign_seat: bool,
+    pub requested_at: String,
+}
+
 pub trait AppMembershipStore {
     fn load_info<'a>(
         &'a self,
@@ -796,6 +994,7 @@ pub trait AppMembershipStore {
         &'a self,
         catalog_subject: Option<AppMembershipSubject>,
         package_id: i64,
+        audience: String,
     ) -> AppMembershipReadFuture<'a, Option<AppMembershipPackageItem>>;
 
     fn load_package_groups<'a>(
@@ -810,6 +1009,7 @@ pub trait AppMembershipStore {
         &'a self,
         catalog_subject: Option<AppMembershipSubject>,
         package_group_id: i64,
+        audience: String,
     ) -> AppMembershipReadFuture<'a, Option<AppMembershipPackageGroupItem>>;
 
     fn load_points_balance<'a>(
@@ -883,6 +1083,36 @@ pub trait AppMembershipStore {
         &'a self,
         query: FeatureAccessCheckQuery,
     ) -> AppMembershipReadFuture<'a, FeatureAccessCheckOutcome>;
+
+    /// Team (organization) subscription overview for the current org.
+    fn load_team_subscription<'a>(
+        &'a self,
+        query: TeamSubscriptionQuery,
+    ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview>;
+
+    /// Organization seat directory: one row per active IAM organization member.
+    fn load_team_seats<'a>(
+        &'a self,
+        query: TeamSeatsQuery,
+    ) -> AppMembershipReadFuture<'a, SdkWorkPageData<TeamSeatMember>>;
+
+    /// Assign the lowest free seat to an active organization member.
+    fn assign_team_seat<'a>(
+        &'a self,
+        command: AssignTeamSeatCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSeatAssignmentItem>;
+
+    /// Revoke an active seat assignment.
+    fn revoke_team_seat<'a>(
+        &'a self,
+        command: RevokeTeamSeatCommand,
+    ) -> AppMembershipReadFuture<'a, ()>;
+
+    /// Update the team subscription seat policy and auto-assign flag.
+    fn update_team_seat_policy<'a>(
+        &'a self,
+        command: UpdateTeamSeatPolicyCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview>;
 }
 
 pub trait AdminMembershipStore {

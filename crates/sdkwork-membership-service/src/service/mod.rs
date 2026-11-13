@@ -20,6 +20,9 @@ pub fn membership_service_contract() -> CommerceServiceContract {
             "memberships.points.dailyRewards.create",
             "memberships.privileges.speedUps.create",
             "memberships.members.status.update",
+            "memberships.team.seats.create",
+            "memberships.team.seats.delete",
+            "memberships.team.seats.policy.update",
         ],
         vec![
             "memberships.current.retrieve",
@@ -37,6 +40,8 @@ pub fn membership_service_contract() -> CommerceServiceContract {
             "memberships.privileges.usage.retrieve",
             "memberships.members.list",
             "memberships.entitlements.list",
+            "memberships.team.subscription.retrieve",
+            "memberships.team.seats.list",
         ],
         vec![
             crate::ports::MEMBERSHIP_REPOSITORY_PORT,

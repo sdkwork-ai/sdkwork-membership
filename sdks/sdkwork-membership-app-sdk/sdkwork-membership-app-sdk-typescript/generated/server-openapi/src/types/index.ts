@@ -40,6 +40,16 @@ export type { SdkWorkPageDataPointsHistory } from './sdk-work-page-data-points-h
 export type { SdkWorkResourceDataCommand } from './sdk-work-resource-data-command';
 export type { MembershipFeatureAccessCheckCommand } from './membership-feature-access-check-command';
 export type { MembershipFeatureAccessCheckResult } from './membership-feature-access-check-result';
+export type { MembershipAudience } from './membership-audience';
+export type { MembershipPriceUnit } from './membership-price-unit';
+export type { TeamSubscriptionOverview } from './team-subscription-overview';
+export type { TeamSeatMember } from './team-seat-member';
+export type { TeamSeatAssignmentItem } from './team-seat-assignment-item';
+export type { TeamSeatAssignmentCommand } from './team-seat-assignment-command';
+export type { TeamSeatPolicyCommand } from './team-seat-policy-command';
+export type { SdkWorkResourceDataTeamSubscriptionOverview } from './sdk-work-resource-data-team-subscription-overview';
+export type { SdkWorkResourceDataTeamSeatAssignment } from './sdk-work-resource-data-team-seat-assignment';
+export type { SdkWorkPageDataTeamSeatMembers } from './sdk-work-page-data-team-seat-members';
 export type { MembershipCategory } from './membership-category';
 export type { CurrentRetrieveResponse } from './current-retrieve-response';
 export type { CurrentStatusRetrieveResponse } from './current-status-retrieve-response';
@@ -60,3 +70,7 @@ export type { PointsDailyRewardsStatusRetrieveResponse } from './points-daily-re
 export type { PrivilegesUsageRetrieveResponse } from './privileges-usage-retrieve-response';
 export type { PrivilegesSpeedUpsCreateResponse201 } from './privileges-speed-ups-create-response201';
 export type { AccessChecksCreateResponse201 } from './access-checks-create-response201';
+export type { TeamSubscriptionRetrieveResponse } from './team-subscription-retrieve-response';
+export type { TeamSeatsListResponse } from './team-seats-list-response';
+export type { TeamSeatsCreateResponse201 } from './team-seats-create-response201';
+export type { TeamSeatsPolicyUpdateResponse } from './team-seats-policy-update-response';

@@ -118,3 +118,28 @@ UPDATE membership_package SET name = 'Super - Annual', description = 'Annual sub
 UPDATE membership_package SET name = 'Super - Monthly', description = 'Monthly subscription, auto-renew on expiry', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-super-monthly';
 UPDATE membership_package SET name = 'Super - Quarterly', description = 'Quarterly subscription, auto-renew on expiry', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-super-quarterly';
 UPDATE membership_package SET name = 'Super - Single Month', description = 'One-time purchase, no auto-renew', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-super-single';
+
+-- ---------------------------------------------------------------------------
+-- Team (organization) plan family: per-seat subscriptions
+-- ---------------------------------------------------------------------------
+UPDATE membership_plan SET name = 'Team Starter', description = 'Organization workspace for small teams with pooled compute credits.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-starter';
+UPDATE membership_plan SET name = 'Team Growth', description = 'Higher pooled quota, shared agents, and priority lanes for growing teams.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth';
+UPDATE membership_plan SET name = 'Team Scale', description = 'Maximum pooled quota and dedicated capacity for large organizations.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-scale';
+
+UPDATE membership_plan_version SET title = 'Team Starter', description = 'Organization workspace for small teams with pooled compute credits.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-starter-v1';
+UPDATE membership_plan_version SET title = 'Team Growth', description = 'Higher pooled quota, shared agents, and priority lanes for growing teams.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1';
+UPDATE membership_plan_version SET title = 'Team Scale', description = 'Maximum pooled quota and dedicated capacity for large organizations.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-scale-v1';
+
+UPDATE membership_package_group SET name = 'Team Annual', description = 'Billed yearly per seat, save about 17%.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-annual';
+UPDATE membership_package_group SET name = 'Team Monthly', description = 'Billed monthly per seat, cancel anytime.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-monthly';
+
+UPDATE membership_package SET name = 'Team Starter - Monthly per seat', description = 'Per seat, billed monthly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-monthly';
+UPDATE membership_package SET name = 'Team Starter - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-annual';
+UPDATE membership_package SET name = 'Team Growth - Monthly per seat', description = 'Per seat, billed monthly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-monthly';
+UPDATE membership_package SET name = 'Team Growth - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-annual';
+UPDATE membership_package SET name = 'Team Scale - Monthly per seat', description = 'Per seat, billed monthly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-monthly';
+UPDATE membership_package SET name = 'Team Scale - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-annual';
+
+UPDATE membership_plan_benefit SET grant_quantity = 'Shared standard lane', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-starter-v1-benefit-queue';
+UPDATE membership_plan_benefit SET grant_quantity = 'Shared fast lane', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1-benefit-queue';
+UPDATE membership_plan_benefit SET grant_quantity = 'Dedicated VIP lane', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-scale-v1-benefit-queue';

@@ -11,23 +11,35 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Path, Query, State};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde::Deserialize;
 use sqlx::PgPool;
 
-use crate::response::{finish_api_created, finish_api_json, item_envelope, ApiProblem, ApiResult};
+use crate::response::{
+    finish_api_created, finish_api_json, finish_api_no_content, item_envelope, ApiProblem,
+    ApiResult,
+};
 use crate::subject::numeric_runtime_subject_from_context;
+use sdkwork_contract_service::CommerceServiceError;
 use sdkwork_membership_repository_sqlx::shared::{
     current_timestamp_string, normalize_optional_text,
 };
 use sdkwork_membership_repository_sqlx::{
-    is_valid_membership_category, AppMembershipEntityIdGenerator, AppMembershipListQuery,
-    AppMembershipPointsHistoryQuery, AppMembershipPurchaseOutcome, AppMembershipResult,
-    AppMembershipStore, AppMembershipSubject, FeatureAccessCheckQuery,
-    PostgresCommerceMembershipStore, SubmitMembershipPurchaseCommand,
+    is_valid_membership_audience, is_valid_membership_category, is_valid_membership_seat_policy,
+    AppMembershipEntityIdGenerator, AppMembershipListQuery, AppMembershipPointsHistoryQuery,
+    AppMembershipPurchaseOutcome, AppMembershipResult, AppMembershipStore, AppMembershipSubject,
+    AppMembershipTeamScope, AssignTeamSeatCommand, FeatureAccessCheckQuery,
+    PostgresCommerceMembershipStore, RevokeTeamSeatCommand, SubmitMembershipPurchaseCommand,
+    TeamSeatsQuery, TeamSubscriptionQuery, UpdateTeamSeatPolicyCommand,
 };
 use sdkwork_web_core::WebRequestContext;
+
+/// Default catalog audience for the app catalog reads.
+///
+/// The personal token-plan page keeps calling the same paths without the
+/// `audience` parameter and must keep seeing exactly the personal catalog.
+const DEFAULT_CATALOG_AUDIENCE: &str = "personal";
 
 #[derive(Clone)]
 struct AppMembershipState {
@@ -39,6 +51,8 @@ struct AppMembershipState {
 #[derive(Debug, Deserialize)]
 struct MembershipCatalogQuery {
     category: Option<String>,
+    /// Catalog audience filter (`personal` | `team`), default `personal`.
+    audience: Option<String>,
     #[serde(default, with = "sdkwork_utils_rust::serde_int64::option")]
     plan_id: Option<i64>,
     recommended_only: Option<bool>,
@@ -61,6 +75,8 @@ struct MembershipBenefitQuery {
 #[derive(Debug, Deserialize)]
 struct MembershipPackagesQuery {
     category: Option<String>,
+    /// Catalog audience filter (`personal` | `team`), default `personal`.
+    audience: Option<String>,
     #[serde(default, with = "sdkwork_utils_rust::serde_int64::option")]
     package_group_id: Option<i64>,
     #[serde(default, with = "sdkwork_utils_rust::serde_int64::option")]
@@ -77,6 +93,61 @@ struct MembershipPointsHistoryQuery {
     #[serde(rename = "page_size")]
     page_size: Option<i64>,
     cursor: Option<String>,
+}
+
+/// Catalog audience query used by the single-resource catalog reads.
+#[derive(Debug, Deserialize)]
+struct MembershipAudienceQuery {
+    /// Catalog audience filter (`personal` | `team`), default `personal`.
+    audience: Option<String>,
+}
+
+/// `GET /team/seats` query parameters.
+#[derive(Debug, Deserialize)]
+struct TeamSeatsListQuery {
+    page: Option<i64>,
+    #[serde(rename = "page_size")]
+    page_size: Option<i64>,
+    /// Free-text search over username / display name / email.
+    q: Option<String>,
+}
+
+/// `POST /team/seats` body.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TeamSeatAssignmentRequest {
+    user_id: String,
+}
+
+/// `PATCH /team/seats/policy` body.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TeamSeatPolicyRequest {
+    seat_policy: String,
+    auto_assign_seat: bool,
+}
+
+/// Raw principal scope for the organization (team) endpoints.
+///
+/// The organization id is taken verbatim from the authenticated principal
+/// (`ctx.principal().organization_id()`), never from a header, because it is
+/// both the IAM organization id used by the directory projection and the team
+/// subscription `subject_id`.
+#[derive(Debug, Clone)]
+struct TeamRequestScope {
+    tenant_id: String,
+    organization_id: String,
+    user_id: String,
+}
+
+impl TeamRequestScope {
+    fn into_scope(self) -> AppMembershipTeamScope {
+        AppMembershipTeamScope {
+            tenant_id: self.tenant_id,
+            organization_id: self.organization_id,
+            user_id: self.user_id,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,11 +183,32 @@ fn list_query_from_params(
         page_size,
         cursor: normalize_optional_text(cursor),
         category: None,
+        audience: None,
+    }
+}
+
+/// Resolve the catalog `audience` query parameter (default `personal`).
+fn resolve_catalog_audience(audience: Option<String>) -> Result<String, ApiProblem> {
+    match audience {
+        None => Ok(DEFAULT_CATALOG_AUDIENCE.to_owned()),
+        Some(raw) if raw.trim().is_empty() => Ok(DEFAULT_CATALOG_AUDIENCE.to_owned()),
+        Some(raw) => {
+            let normalized = raw.trim().to_ascii_lowercase();
+            if is_valid_membership_audience(&normalized) {
+                Ok(normalized)
+            } else {
+                Err(
+                    ApiProblem::bad_request("membership audience must be personal or team")
+                        .with_reason("invalid_audience"),
+                )
+            }
+        }
     }
 }
 
 fn list_query_with_category(
     category: Option<String>,
+    audience: String,
     page: Option<i64>,
     page_size: Option<i64>,
     cursor: Option<String>,
@@ -140,6 +232,7 @@ fn list_query_with_category(
         page_size,
         cursor: normalize_optional_text(cursor),
         category,
+        audience: Some(audience),
     })
 }
 
@@ -216,6 +309,22 @@ fn app_membership_router_with_state(
             "/app/v3/api/memberships/access/checks",
             post(check_feature_access),
         )
+        .route(
+            "/app/v3/api/memberships/team/subscription",
+            get(fetch_team_subscription),
+        )
+        .route(
+            "/app/v3/api/memberships/team/seats",
+            get(fetch_team_seats).post(create_team_seat),
+        )
+        .route(
+            "/app/v3/api/memberships/team/seats/policy",
+            patch(update_team_seat_policy),
+        )
+        .route(
+            "/app/v3/api/memberships/team/seats/{userId}",
+            delete(revoke_team_seat),
+        )
         .with_state(AppMembershipState {
             store,
             entity_id_generator,
@@ -266,8 +375,10 @@ async fn fetch_plans(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
+                audience,
                 query.page,
                 query.page_size,
                 query.cursor,
@@ -320,8 +431,10 @@ async fn fetch_package_groups(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
+                audience,
                 query.page,
                 query.page_size,
                 query.cursor,
@@ -351,14 +464,16 @@ async fn fetch_package_group(
     ctx: WebRequestContext,
     State(state): State<AppMembershipState>,
     Path(package_group_id): Path<i64>,
+    Query(query): Query<MembershipAudienceQuery>,
 ) -> axum::response::Response {
     finish_api_json(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let item = state
                 .store
-                .load_package_group(catalog_subject, package_group_id)
+                .load_package_group(catalog_subject, package_group_id, audience)
                 .await
                 .map_err(|e| {
                     ApiProblem::from_service(
@@ -383,8 +498,10 @@ async fn fetch_package_group_packages(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
+                audience,
                 query.page,
                 query.page_size,
                 query.cursor,
@@ -416,8 +533,10 @@ async fn fetch_packages(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
+                audience,
                 query.page,
                 query.page_size,
                 query.cursor,
@@ -444,14 +563,16 @@ async fn fetch_package(
     ctx: WebRequestContext,
     State(state): State<AppMembershipState>,
     Path(package_id): Path<i64>,
+    Query(query): Query<MembershipAudienceQuery>,
 ) -> axum::response::Response {
     finish_api_json(
         &ctx,
         async {
             let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let audience = resolve_catalog_audience(query.audience)?;
             let item = state
                 .store
-                .load_package(catalog_subject, package_id)
+                .load_package(catalog_subject, package_id, audience)
                 .await
                 .map_err(|e| {
                     ApiProblem::from_service("membership package read model is unavailable", e)
@@ -807,6 +928,11 @@ fn build_submit_purchase_command(
         idempotency_key,
         requested_at,
         action: action.to_owned(),
+        // The app purchase reservation is a placeholder checkout; the paid
+        // order (fulfillment) carries the real seat quantity and organization
+        // subject for team plans.
+        seats: 1,
+        organization_subject_id: None,
     })
 }
 
@@ -815,6 +941,235 @@ fn current_unix_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
+}
+
+// ── Organization (team) seat licensing ─────────────────────────────────────
+
+/// Resolve the raw principal scope required by the organization endpoints.
+///
+/// `organization_id` is taken verbatim from the authenticated principal — the
+/// request never carries it as a header — and is used both as the IAM
+/// organization id for the directory projection and as the team subscription
+/// `subject_id`.
+fn resolve_required_team_scope(ctx: &WebRequestContext) -> Result<TeamRequestScope, ApiProblem> {
+    let principal = ctx.principal();
+    team_scope_from_principal_parts(
+        principal.map(|principal| principal.tenant_id()),
+        principal.and_then(|principal| principal.organization_id()),
+        principal.map(|principal| principal.user_id()),
+    )
+}
+
+/// Pure core of [`resolve_required_team_scope`]: the organization id comes only
+/// from the authenticated principal claims, never from a request header.
+fn team_scope_from_principal_parts(
+    tenant_id: Option<&str>,
+    organization_id: Option<&str>,
+    user_id: Option<&str>,
+) -> Result<TeamRequestScope, ApiProblem> {
+    let (Some(tenant_id), Some(user_id)) = (tenant_id, user_id) else {
+        return Err(ApiProblem::unauthorized(
+            "trusted request subject is required for membership team operations",
+        ));
+    };
+    let tenant_id = tenant_id.trim().to_owned();
+    let user_id = user_id.trim().to_owned();
+    if tenant_id.is_empty() || user_id.is_empty() {
+        return Err(ApiProblem::unauthorized(
+            "trusted request subject is required for membership team operations",
+        ));
+    }
+    let organization_id = organization_id.unwrap_or_default().trim().to_owned();
+    if organization_id.is_empty() || organization_id == "0" {
+        return Err(ApiProblem::forbidden(
+            "organization_scope_required: team operations require an organization-scoped session",
+        )
+        .with_reason("organization_scope_required"));
+    }
+    Ok(TeamRequestScope {
+        tenant_id,
+        organization_id,
+        user_id,
+    })
+}
+
+/// Map team seat domain rejections onto their HTTP semantics.
+///
+/// `ProblemDetail.code` stays the numeric platform code; the business reason
+/// (`seat_management_forbidden`, `seat_capacity_exceeded`, ...) is carried on
+/// the problem `reason` field so clients never parse prose.
+fn map_team_service_error(error: CommerceServiceError) -> ApiProblem {
+    let message = error.message().to_owned();
+    let reason = message
+        .split(':')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_owned();
+    match reason.as_str() {
+        "seat_management_forbidden" | "organization_scope_required" => {
+            ApiProblem::forbidden(message).with_reason(reason)
+        }
+        "team_subscription_inactive"
+        | "seat_capacity_exceeded"
+        | "seat_already_assigned"
+        | "last_seat_owner_required" => ApiProblem::conflict(message).with_reason(reason),
+        "seat_assignment_not_found" => ApiProblem::not_found(message).with_reason(reason),
+        "not_organization_member" => ApiProblem::bad_request(message).with_reason(reason),
+        _ => ApiProblem::from_service("membership team seat operation is unavailable", error),
+    }
+}
+
+async fn fetch_team_subscription(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+) -> axum::response::Response {
+    finish_api_json(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            let data = state
+                .store
+                .load_team_subscription(TeamSubscriptionQuery {
+                    scope: scope.into_scope(),
+                })
+                .await
+                .map_err(map_team_service_error)?;
+            Ok(item_envelope(data))
+        }
+        .await,
+    )
+}
+
+async fn fetch_team_seats(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+    Query(query): Query<TeamSeatsListQuery>,
+) -> axum::response::Response {
+    finish_api_json(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            let data = state
+                .store
+                .load_team_seats(TeamSeatsQuery {
+                    scope: scope.into_scope(),
+                    q: normalize_optional_text(query.q),
+                    page: query.page,
+                    page_size: query.page_size,
+                })
+                .await
+                .map_err(map_team_service_error)?;
+            Ok(data)
+        }
+        .await,
+    )
+}
+
+async fn create_team_seat(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+    request: Result<Json<TeamSeatAssignmentRequest>, JsonRejection>,
+) -> axum::response::Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(rejection) => {
+            return ApiProblem::bad_request(format!(
+                "membership team seat assignment request body is invalid: {rejection}"
+            ))
+            .with_reason("invalid_request")
+            .into_response_for(&ctx);
+        }
+    };
+    finish_api_created(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            let target_user_id = request.user_id.trim().to_owned();
+            if target_user_id.is_empty() {
+                return Err(ApiProblem::bad_request(
+                    "not_organization_member: membership team seat target user id is required",
+                )
+                .with_reason("not_organization_member"));
+            }
+            state
+                .store
+                .assign_team_seat(AssignTeamSeatCommand {
+                    scope: scope.into_scope(),
+                    target_user_id,
+                    requested_at: current_timestamp_string(),
+                })
+                .await
+                .map_err(map_team_service_error)
+                .map(item_envelope)
+        }
+        .await,
+    )
+}
+
+async fn revoke_team_seat(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+    Path(user_id): Path<String>,
+) -> axum::response::Response {
+    finish_api_no_content(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            state
+                .store
+                .revoke_team_seat(RevokeTeamSeatCommand {
+                    scope: scope.into_scope(),
+                    target_user_id: user_id,
+                    requested_at: current_timestamp_string(),
+                })
+                .await
+                .map_err(map_team_service_error)
+        }
+        .await,
+    )
+}
+
+async fn update_team_seat_policy(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+    request: Result<Json<TeamSeatPolicyRequest>, JsonRejection>,
+) -> axum::response::Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(rejection) => {
+            return ApiProblem::bad_request(format!(
+                "membership team seat policy request body is invalid: {rejection}"
+            ))
+            .with_reason("invalid_request")
+            .into_response_for(&ctx);
+        }
+    };
+    finish_api_json(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            let seat_policy = request.seat_policy.trim().to_ascii_lowercase();
+            if !is_valid_membership_seat_policy(&seat_policy) {
+                return Err(ApiProblem::bad_request(
+                    "membership seat policy must be strict or flex_overflow",
+                )
+                .with_reason("invalid_seat_policy"));
+            }
+            state
+                .store
+                .update_team_seat_policy(UpdateTeamSeatPolicyCommand {
+                    scope: scope.into_scope(),
+                    seat_policy,
+                    auto_assign_seat: request.auto_assign_seat,
+                    requested_at: current_timestamp_string(),
+                })
+                .await
+                .map_err(map_team_service_error)
+                .map(item_envelope)
+        }
+        .await,
+    )
 }
 
 #[cfg(test)]
@@ -829,6 +1184,7 @@ mod tests {
         let Query(catalog) = Query::<MembershipCatalogQuery>::try_from_uri(&catalog_uri)
             .expect("catalog query without plan_id");
         assert_eq!(catalog.plan_id, None);
+        assert_eq!(catalog.audience, None);
 
         let benefits_uri = "/app/v3/api/memberships/benefits"
             .parse()
@@ -844,5 +1200,50 @@ mod tests {
             .expect("packages query without optional filters");
         assert_eq!(packages.package_group_id, None);
         assert_eq!(packages.plan_id, None);
+        assert_eq!(packages.audience, None);
+
+        let team_seats_uri = "/app/v3/api/memberships/team/seats?page=2&page_size=50&q=ann";
+        let team_seats_uri = team_seats_uri.parse().expect("team seats URI");
+        let Query(team_seats) =
+            Query::<TeamSeatsListQuery>::try_from_uri(&team_seats_uri).expect("team seats query");
+        assert_eq!(team_seats.page, Some(2));
+        assert_eq!(team_seats.page_size, Some(50));
+        assert_eq!(team_seats.q.as_deref(), Some("ann"));
+    }
+
+    #[test]
+    fn catalog_audience_defaults_to_personal_and_rejects_unknown_values() {
+        assert_eq!(
+            resolve_catalog_audience(None).expect("default audience"),
+            DEFAULT_CATALOG_AUDIENCE
+        );
+        assert_eq!(
+            resolve_catalog_audience(Some("  ".to_owned())).expect("blank audience"),
+            DEFAULT_CATALOG_AUDIENCE
+        );
+        assert_eq!(
+            resolve_catalog_audience(Some("TEAM".to_owned())).expect("team audience"),
+            "team"
+        );
+        assert!(resolve_catalog_audience(Some("enterprise".to_owned())).is_err());
+    }
+
+    #[test]
+    fn team_scope_requires_an_organization_scoped_principal() {
+        let tenant_level = team_scope_from_principal_parts(Some("100001"), None, Some("42"));
+        assert!(tenant_level.is_err());
+
+        let sentinel_scope = team_scope_from_principal_parts(Some("100001"), Some("0"), Some("42"));
+        assert!(sentinel_scope.is_err());
+
+        let organization_scoped =
+            team_scope_from_principal_parts(Some("100001"), Some("601"), Some("42"))
+                .expect("organization scope");
+        assert_eq!(organization_scoped.organization_id, "601");
+        assert_eq!(organization_scoped.tenant_id, "100001");
+        assert_eq!(organization_scoped.user_id, "42");
+
+        let unauthenticated = team_scope_from_principal_parts(None, Some("601"), None);
+        assert!(unauthenticated.is_err());
     }
 }

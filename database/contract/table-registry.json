@@ -97,6 +97,12 @@
       "owner": "sdkwork-membership",
       "compliance_level": "L2",
       "lifecycle_status": "active"
+    },
+    {
+      "table_name": "membership_seat_assignment",
+      "owner": "sdkwork-membership",
+      "compliance_level": "L2",
+      "lifecycle_status": "active"
     }
   ]
 }

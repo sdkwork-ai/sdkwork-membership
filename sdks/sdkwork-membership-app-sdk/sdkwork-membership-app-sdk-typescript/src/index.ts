@@ -73,9 +73,25 @@ export interface AppMembershipPackageItem {
   description?: string;
   price: string;
   originalPrice?: string;
+  /** Catalog audience of this package (`personal` | `team`). */
+  audience: "personal" | "team";
+  /** `seat` means `price` is the unit price of one seat for one billing period. */
+  priceUnit: "package" | "seat";
   pointAmount: number;
   durationDays: number;
   planName?: string;
+  /** Storage id of the plan this package grants. */
+  planId: string;
+  /** Plan rank as served by `AppMembershipPlanItem.id` (int64 string on the wire). */
+  planRank: string;
+  /** Billing recurrence (`once` | `day` | `week` | `month` | `quarter` | `year`). */
+  recurrenceCycle?: string | null;
+  /** Minimum purchasable seat quantity for per-seat team packages (int64 string on the wire). */
+  seatMin: string;
+  /** Maximum purchasable seat quantity for per-seat team packages (int64 string on the wire). */
+  seatMax: string;
+  /** Membership points every assigned seat receives per billing period (int64 string on the wire). */
+  seatPointsAmount: string;
   sortWeight: number;
   recommended: boolean;
   tags: string[];
@@ -85,6 +101,12 @@ export interface AppMembershipPackageGroupItem {
   id: number;
   name: string;
   description?: string;
+  /** Catalog audience of this group (`personal` | `team`). */
+  audience: "personal" | "team";
+  /** Billing cycle of this group (`once` | `day` | `week` | `month` | `quarter` | `year`). */
+  billingCycle?: string | null;
+  /** Billing duration in days for this group (int64 string on the wire). */
+  durationDays: string;
   sortWeight: number;
   packages: AppMembershipPackageItem[];
 }

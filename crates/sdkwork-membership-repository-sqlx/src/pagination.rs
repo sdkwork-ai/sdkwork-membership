@@ -6,7 +6,11 @@ use sdkwork_utils_rust::{
 };
 
 /// Parse standard list query parameters (`page`, `page_size`, optional `cursor`)
-/// plus an optional catalog `category` filter.
+/// plus an optional catalog `category` filter and an optional catalog
+/// `audience` filter.
+///
+/// `audience` is `None` for admin lists (no audience filter, legacy behaviour)
+/// and `Some("personal")` / `Some("team")` for the app catalog reads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MembershipListQuery {
     pub page: Option<i64>,
@@ -14,6 +18,8 @@ pub struct MembershipListQuery {
     pub cursor: Option<String>,
     /// Optional catalog classification filter (`token` | `community`).
     pub category: Option<String>,
+    /// Optional catalog audience filter (`personal` | `team`).
+    pub audience: Option<String>,
 }
 
 impl MembershipListQuery {

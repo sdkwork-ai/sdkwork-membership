@@ -84,6 +84,8 @@ export interface SdkworkMembershipMutationInput {
   couponId?: string;
   packageId?: number;
   paymentMethod?: string;
+  /** seat quantity for organization (team) packages; 1 for personal packages */
+  quantity?: number;
   /** 订阅期额度充值数量（仅 action=recharge）。 */
   grantQuantity?: number;
   /** 订阅期额度充值金额（仅 action=recharge，货币金额字符串）。 */

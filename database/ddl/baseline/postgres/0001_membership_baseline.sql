@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS membership_plan (
     tenant_id       TEXT NOT NULL,
     organization_id TEXT NOT NULL DEFAULT '0',
     category        TEXT NOT NULL DEFAULT 'token',
+    audience        TEXT NOT NULL DEFAULT 'personal',
     plan_no         TEXT NOT NULL,
     plan_code       TEXT,
     name            TEXT NOT NULL,
@@ -36,11 +37,14 @@ CREATE TABLE IF NOT EXISTS membership_plan (
     CONSTRAINT pk_membership_plan PRIMARY KEY (id),
     CONSTRAINT uk_membership_plan_tenant_no UNIQUE (tenant_id, organization_id, plan_no),
     CONSTRAINT ck_membership_plan_category CHECK (category IN ('token', 'community')),
+    CONSTRAINT ck_membership_plan_audience CHECK (audience IN ('personal', 'team')),
     CONSTRAINT ck_membership_plan_status CHECK (status IN ('active', 'inactive', 'disabled'))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS uk_membership_plan_uuid
     ON membership_plan (uuid);
+CREATE INDEX IF NOT EXISTS idx_membership_plan_tenant_audience
+    ON membership_plan (tenant_id, organization_id, category, audience, status, sort_weight);
 
 CREATE TABLE IF NOT EXISTS membership_plan_version (
     id               TEXT NOT NULL,
@@ -119,6 +123,7 @@ CREATE TABLE IF NOT EXISTS membership_package_group (
     tenant_id       TEXT NOT NULL,
     organization_id TEXT NOT NULL DEFAULT '0',
     category        TEXT NOT NULL DEFAULT 'token',
+    audience        TEXT NOT NULL DEFAULT 'personal',
     external_id     INTEGER,
     group_no        TEXT NOT NULL,
     name            TEXT NOT NULL,
@@ -135,6 +140,7 @@ CREATE TABLE IF NOT EXISTS membership_package_group (
     CONSTRAINT pk_membership_package_group PRIMARY KEY (id),
     CONSTRAINT uk_membership_package_group_tenant_no UNIQUE (tenant_id, organization_id, group_no),
     CONSTRAINT ck_membership_package_group_category CHECK (category IN ('token', 'community')),
+    CONSTRAINT ck_membership_package_group_audience CHECK (audience IN ('personal', 'team')),
     CONSTRAINT ck_membership_package_group_status CHECK (status IN ('active', 'inactive', 'disabled')),
     CONSTRAINT ck_membership_package_group_billing_cycle CHECK (billing_cycle IS NULL OR billing_cycle IN ('once', 'day', 'week', 'month', 'quarter', 'year')),
     CONSTRAINT ck_membership_package_group_display_channel CHECK (display_channel IS NULL OR display_channel IN ('app', 'pc', 'all'))
@@ -149,6 +155,7 @@ CREATE TABLE IF NOT EXISTS membership_package (
     tenant_id             TEXT NOT NULL,
     organization_id       TEXT NOT NULL DEFAULT '0',
     category              TEXT NOT NULL DEFAULT 'token',
+    audience              TEXT NOT NULL DEFAULT 'personal',
     external_id           INTEGER NOT NULL,
     package_no            TEXT NOT NULL,
     package_group_id      TEXT NOT NULL,
@@ -160,6 +167,10 @@ CREATE TABLE IF NOT EXISTS membership_package (
     price_amount          TEXT NOT NULL,
     original_price_amount TEXT,
     currency_code         TEXT NOT NULL DEFAULT 'CNY',
+    price_unit            TEXT NOT NULL DEFAULT 'package',
+    seat_min              INTEGER NOT NULL DEFAULT 1,
+    seat_max              INTEGER NOT NULL DEFAULT 500,
+    seat_points_amount    INTEGER NOT NULL DEFAULT 0,
     point_amount          INTEGER NOT NULL DEFAULT 0,
     discount              BIGINT NOT NULL DEFAULT 100,
     duration_days         INTEGER NOT NULL,
@@ -178,6 +189,11 @@ CREATE TABLE IF NOT EXISTS membership_package (
     CONSTRAINT uk_membership_package_tenant_no UNIQUE (tenant_id, organization_id, package_no),
     CONSTRAINT ck_membership_package_discount_range CHECK (discount >= 1 AND discount <= 100),
     CONSTRAINT ck_membership_package_category CHECK (category IN ('token', 'community')),
+    CONSTRAINT ck_membership_package_audience CHECK (audience IN ('personal', 'team')),
+    CONSTRAINT ck_membership_package_price_unit CHECK (price_unit IN ('package', 'seat')),
+    CONSTRAINT ck_membership_package_seat_bounds CHECK (seat_min >= 1 AND seat_max >= seat_min AND seat_max <= 10000),
+    CONSTRAINT ck_membership_package_seat_points CHECK (seat_points_amount >= 0),
+    CONSTRAINT ck_membership_package_team_seat_price CHECK (price_unit <> 'seat' OR audience = 'team'),
     CONSTRAINT ck_membership_package_status CHECK (status IN ('active', 'inactive', 'disabled')),
     CONSTRAINT ck_membership_package_recurrence_cycle CHECK (recurrence_cycle IS NULL OR recurrence_cycle IN ('once', 'day', 'week', 'month', 'quarter', 'year'))
 );
@@ -209,6 +225,10 @@ CREATE TABLE IF NOT EXISTS membership_subscription (
     cancel_at_period_end     INTEGER NOT NULL DEFAULT 0,
     auto_renew               INTEGER NOT NULL DEFAULT 0,
     growth_value             BIGINT NOT NULL DEFAULT 0,
+    seats_purchased          INTEGER NOT NULL DEFAULT 1,
+    seats_used               INTEGER NOT NULL DEFAULT 0,
+    seat_policy              TEXT NOT NULL DEFAULT 'strict',
+    auto_assign_seat         INTEGER NOT NULL DEFAULT 1,
     request_no               TEXT,
     idempotency_key          TEXT,
     version                  BIGINT NOT NULL DEFAULT 0,
@@ -216,6 +236,13 @@ CREATE TABLE IF NOT EXISTS membership_subscription (
     updated_at               TIMESTAMPTZ NOT NULL,
     CONSTRAINT pk_membership_subscription PRIMARY KEY (id),
     CONSTRAINT ck_membership_subscription_category CHECK (category IN ('token', 'community')),
+    CONSTRAINT ck_membership_subscription_subject_type CHECK (subject_type IN ('user', 'organization')),
+    CONSTRAINT ck_membership_subscription_seat_policy CHECK (seat_policy IN ('strict', 'flex_overflow')),
+    CONSTRAINT ck_membership_subscription_seats CHECK (
+        seats_purchased >= 1
+        AND seats_used >= 0
+        AND (seat_policy = 'flex_overflow' OR seats_used <= seats_purchased)
+    ),
     CONSTRAINT ck_membership_subscription_status CHECK (status IN ('pending', 'pending_activation', 'active', 'grace_period', 'expired', 'cancelled'))
 );
 
@@ -225,6 +252,47 @@ CREATE INDEX IF NOT EXISTS idx_membership_subscription_idempotency
     ON membership_subscription (tenant_id, owner_user_id, idempotency_key);
 CREATE INDEX IF NOT EXISTS idx_membership_subscription_order
     ON membership_subscription (tenant_id, source_order_id);
+CREATE INDEX IF NOT EXISTS idx_membership_subscription_subject
+    ON membership_subscription (tenant_id, subject_type, subject_id, category, status, expires_at DESC);
+
+-- Seat assignments for organization (team) subscriptions. One active seat per
+-- member and one active holder per seat number, enforced by partial unique
+-- indexes. Revoked rows are retained as the seat history.
+CREATE TABLE IF NOT EXISTS membership_seat_assignment (
+    id                    TEXT NOT NULL,
+    uuid                  VARCHAR(64),
+    tenant_id             TEXT NOT NULL,
+    organization_id       TEXT NOT NULL DEFAULT '0',
+    subscription_id       TEXT NOT NULL,
+    seat_no               INTEGER NOT NULL,
+    user_id               TEXT NOT NULL,
+    membership_id         TEXT,
+    member_display_name   TEXT,
+    member_email          TEXT,
+    state                 TEXT NOT NULL DEFAULT 'active',
+    assigned_by_user_id   TEXT NOT NULL,
+    assigned_at           TIMESTAMPTZ NOT NULL,
+    revoked_at            TIMESTAMPTZ,
+    revoked_reason        TEXT,
+    revoke_actor_user_id  TEXT,
+    version               BIGINT NOT NULL DEFAULT 0,
+    created_at            TIMESTAMPTZ NOT NULL,
+    updated_at            TIMESTAMPTZ NOT NULL,
+    CONSTRAINT pk_membership_seat_assignment PRIMARY KEY (id),
+    CONSTRAINT ck_membership_seat_assignment_state CHECK (state IN ('active', 'revoked')),
+    CONSTRAINT ck_membership_seat_assignment_seat_no CHECK (seat_no >= 1)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uk_membership_seat_assignment_uuid
+    ON membership_seat_assignment (uuid);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_membership_seat_assignment_active_user
+    ON membership_seat_assignment (subscription_id, user_id) WHERE state = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS uk_membership_seat_assignment_active_seat
+    ON membership_seat_assignment (subscription_id, seat_no) WHERE state = 'active';
+CREATE INDEX IF NOT EXISTS idx_membership_seat_assignment_subscription
+    ON membership_seat_assignment (tenant_id, subscription_id, state, seat_no);
+CREATE INDEX IF NOT EXISTS idx_membership_seat_assignment_user
+    ON membership_seat_assignment (tenant_id, user_id, state, assigned_at DESC);
 
 CREATE TABLE IF NOT EXISTS membership_period (
     id                       TEXT NOT NULL,
@@ -514,7 +582,8 @@ CREATE TABLE IF NOT EXISTS membership_change_log (
     CONSTRAINT uk_membership_change_log_uuid UNIQUE (uuid),
     CONSTRAINT chk_change_log_action CHECK (action IN (
         'activate', 'renew', 'upgrade', 'downgrade',
-        'expire', 'cancel', 'grace', 'restore'
+        'expire', 'cancel', 'grace', 'restore',
+        'seat_purchase', 'seat_assign', 'seat_revoke', 'seat_policy'
     )),
     CONSTRAINT chk_change_log_from_status CHECK (from_status IS NULL OR from_status IN ('active', 'expired', 'cancelled', 'grace_period', 'pending')),
     CONSTRAINT chk_change_log_to_status CHECK (to_status IS NULL OR to_status IN ('active', 'expired', 'cancelled', 'grace_period', 'pending'))

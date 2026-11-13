@@ -108,57 +108,55 @@ pub fn success_json_with_status<T: Serialize>(
 pub struct ApiProblem {
     message: String,
     kind: WebFrameworkErrorKind,
+    reason: Option<String>,
 }
 
 impl ApiProblem {
-    pub fn bad_request(message: impl Into<String>) -> Self {
+    fn new(message: impl Into<String>, kind: WebFrameworkErrorKind) -> Self {
         Self {
             message: message.into(),
-            kind: WebFrameworkErrorKind::BadRequest,
+            kind,
+            reason: None,
         }
+    }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self::new(message, WebFrameworkErrorKind::BadRequest)
     }
 
     pub fn unauthorized(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::MissingCredentials,
-        }
+        Self::new(message, WebFrameworkErrorKind::MissingCredentials)
     }
 
-    #[allow(dead_code)]
     pub fn forbidden(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::Forbidden,
-        }
+        Self::new(message, WebFrameworkErrorKind::Forbidden)
     }
 
     pub fn not_found(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::NotFound,
-        }
+        Self::new(message, WebFrameworkErrorKind::NotFound)
     }
 
     pub fn conflict(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::Conflict,
-        }
+        Self::new(message, WebFrameworkErrorKind::Conflict)
     }
 
     pub fn internal(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::InternalServerError,
-        }
+        Self::new(message, WebFrameworkErrorKind::InternalServerError)
     }
 
     pub fn dependency_unavailable(message: impl Into<String>) -> Self {
-        Self {
-            message: message.into(),
-            kind: WebFrameworkErrorKind::DependencyUnavailable,
-        }
+        Self::new(message, WebFrameworkErrorKind::DependencyUnavailable)
+    }
+
+    /// Attaches a stable, machine-readable reason to the problem detail.
+    ///
+    /// `ProblemDetail.code` stays the numeric platform code per `API_SPEC.md`
+    /// §15.3; the reason names the specific business rejection (for example
+    /// `seat_capacity_exceeded`) so clients never have to parse prose.
+    #[must_use]
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
     }
 
     /// Map a domain `CommerceServiceError` into a client-safe Problem.
@@ -183,7 +181,7 @@ impl ApiProblem {
             retry_after_seconds: None,
             auth_profile: None,
             failed_stage: None,
-            reason: None,
+            reason: self.reason.clone(),
         }
     }
 

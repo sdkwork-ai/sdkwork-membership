@@ -244,6 +244,12 @@ pub(crate) fn map_membership_package_record(
     rank: i64,
     _sku_id: Option<String>,
     category: String,
+    audience: Option<String>,
+    price_unit: Option<String>,
+    seat_min: i64,
+    seat_max: i64,
+    seat_points_amount: i64,
+    recurrence_cycle: Option<String>,
 ) -> Option<ParsedMembershipPackage> {
     if id <= 0
         || storage_id.trim().is_empty()
@@ -258,6 +264,27 @@ pub(crate) fn map_membership_package_record(
     } else {
         rank
     };
+    let audience = match audience
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("team") => "team".to_owned(),
+        _ => "personal".to_owned(),
+    };
+    let price_unit = match price_unit
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("seat") => "seat".to_owned(),
+        _ => "package".to_owned(),
+    };
+    let recurrence_cycle = recurrence_cycle
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
     let item = AppMembershipPackageItem {
         id,
         category: if category.trim().is_empty() {
@@ -265,13 +292,21 @@ pub(crate) fn map_membership_package_record(
         } else {
             category
         },
+        audience,
         name,
         description,
         price,
         original_price,
+        price_unit,
         point_amount: point_amount.max(0),
         duration_days: duration_days.max(0),
         plan_name: plan_name.or_else(|| Some(default_plan_name(rank).to_owned())),
+        plan_id: plan_storage_id.clone(),
+        plan_rank: rank,
+        recurrence_cycle,
+        seat_min: seat_min.max(1),
+        seat_max: seat_max.max(seat_min.max(1)),
+        seat_points_amount: seat_points_amount.max(0),
         sort_weight,
         recommended,
         tags: string_array_from_json(tags_json),
@@ -377,6 +412,17 @@ pub(crate) fn paid_membership_purchase_submit_command(
             "membership fulfillment action is invalid",
         ));
     }
+    if command.seats < 1 {
+        return Err(CommerceServiceError::validation(
+            "membership fulfillment seat quantity must be at least one",
+        ));
+    }
+    let organization_subject_id = command
+        .organization_subject_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
 
     Ok(SubmitMembershipPurchaseCommand {
         subject: command.subject,
@@ -387,6 +433,8 @@ pub(crate) fn paid_membership_purchase_submit_command(
         idempotency_key: format!("membership-purchase:reserve:{order_id}"),
         requested_at: normalize_membership_timestamp(&command.paid_at)?,
         action,
+        seats: command.seats,
+        organization_subject_id,
     })
 }
 
@@ -438,7 +486,22 @@ pub(crate) fn build_package_group_from_packages(
     sort_weight: i64,
     packages: Vec<AppMembershipPackageItem>,
     category: String,
+    audience: Option<String>,
+    billing_cycle: Option<String>,
+    duration_days: i64,
 ) -> AppMembershipPackageGroupItem {
+    let audience = match audience
+        .as_deref()
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("team") => "team".to_owned(),
+        _ => "personal".to_owned(),
+    };
+    let billing_cycle = billing_cycle
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
     AppMembershipPackageGroupItem {
         id: package_group_id,
         category: if category.trim().is_empty() {
@@ -446,8 +509,11 @@ pub(crate) fn build_package_group_from_packages(
         } else {
             category
         },
+        audience,
         name,
         description,
+        billing_cycle,
+        duration_days: duration_days.max(0),
         sort_weight,
         packages,
     }
@@ -474,6 +540,9 @@ pub(crate) struct StoredMembershipPlan {
     pub id: i64,
     pub storage_id: String,
     pub plan_no: String,
+    /// Catalog audience (`personal` | `team`) of the plan row. Team plans are
+    /// fulfilled as organization subscriptions with licensed seats.
+    pub audience: String,
     pub item: AppMembershipPlanItem,
     pub benefits: Vec<AppMembershipBenefitItem>,
     pub rank: i64,

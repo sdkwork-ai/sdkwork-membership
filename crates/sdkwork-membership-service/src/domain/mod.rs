@@ -37,6 +37,147 @@ impl std::fmt::Display for MembershipCategory {
     }
 }
 
+/// Catalog audience: `personal` plans serve one user, `team` plans serve an
+/// organization and license seats.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipAudience {
+    Personal,
+    Team,
+}
+
+impl MembershipAudience {
+    pub const fn as_storage_str(&self) -> &'static str {
+        match self {
+            Self::Personal => "personal",
+            Self::Team => "team",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, CommerceServiceError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "personal" => Ok(Self::Personal),
+            "team" => Ok(Self::Team),
+            _ => Err(CommerceServiceError::validation(
+                "membership audience must be personal or team",
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for MembershipAudience {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_storage_str())
+    }
+}
+
+/// Seat policy of an organization (team) subscription.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MembershipSeatPolicy {
+    /// Assignments beyond `seats_purchased` are rejected.
+    Strict,
+    /// Assignments beyond `seats_purchased` are allowed and tracked as
+    /// overflow.
+    FlexOverflow,
+}
+
+impl MembershipSeatPolicy {
+    pub const fn as_storage_str(&self) -> &'static str {
+        match self {
+            Self::Strict => "strict",
+            Self::FlexOverflow => "flex_overflow",
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, CommerceServiceError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "strict" => Ok(Self::Strict),
+            "flex_overflow" => Ok(Self::FlexOverflow),
+            _ => Err(CommerceServiceError::validation(
+                "membership seat policy must be strict or flex_overflow",
+            )),
+        }
+    }
+}
+
+impl std::fmt::Display for MembershipSeatPolicy {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_storage_str())
+    }
+}
+
+/// Seat policy mutation accepted by `PATCH /team/seats/policy`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TeamSeatPolicyDraft {
+    pub seat_policy: MembershipSeatPolicy,
+    pub auto_assign_seat: bool,
+}
+
+impl TeamSeatPolicyDraft {
+    pub fn new(seat_policy: &str, auto_assign_seat: bool) -> Result<Self, CommerceServiceError> {
+        Ok(Self {
+            seat_policy: MembershipSeatPolicy::parse(seat_policy)?,
+            auto_assign_seat,
+        })
+    }
+}
+
+/// Rejects a policy switch that the current seat usage cannot satisfy.
+///
+/// `flex_overflow` may leave `seats_used` above `seats_purchased`; switching
+/// that subscription back to `strict` would violate the licensed capacity, so
+/// the transition is rejected until enough seats are released.
+pub fn validate_team_seat_policy_transition(
+    seat_policy: MembershipSeatPolicy,
+    seats_purchased: i64,
+    seats_used: i64,
+) -> Result<(), CommerceServiceError> {
+    if seat_policy == MembershipSeatPolicy::Strict && seats_used > seats_purchased.max(1) {
+        return Err(CommerceServiceError::conflict("seat_capacity_exceeded"));
+    }
+    Ok(())
+}
+
+/// Chooses the lowest free seat number for a new assignment.
+///
+/// The candidate range is `1..=max(seats_purchased, seats_used + 1)`: under
+/// `flex_overflow` the extra seat above the licensed capacity is always
+/// addressable, and under `strict` the caller has already been rejected when
+/// the licensed capacity is exhausted.
+pub fn allocate_team_seat_number(
+    seat_policy: MembershipSeatPolicy,
+    seats_purchased: i64,
+    seats_used: i64,
+    occupied_seat_numbers: &[i64],
+) -> Result<i64, CommerceServiceError> {
+    let seats_purchased = seats_purchased.max(1);
+    let seats_used = seats_used.max(0);
+    if seat_policy == MembershipSeatPolicy::Strict && seats_used >= seats_purchased {
+        return Err(CommerceServiceError::conflict("seat_capacity_exceeded"));
+    }
+    let max_seat = seats_purchased.max(seats_used.saturating_add(1));
+    for candidate in 1..=max_seat {
+        if !occupied_seat_numbers.contains(&candidate) {
+            return Ok(candidate);
+        }
+    }
+    Err(CommerceServiceError::conflict("seat_capacity_exceeded"))
+}
+
+/// Seat assignment request draft (`POST /team/seats` body `{ userId }`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TeamSeatAssignmentDraft {
+    pub user_id: String,
+}
+
+impl TeamSeatAssignmentDraft {
+    pub fn new(user_id: &str) -> Result<Self, CommerceServiceError> {
+        crate::validation::require_non_empty("user_id", user_id)?;
+        Ok(Self {
+            user_id: user_id.trim().to_string(),
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum MembershipBillingCycle {
     Once,
