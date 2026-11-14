@@ -68,6 +68,10 @@ const TEAM_PACKAGE: SdkworkTeamPackage = {
 
 interface FakePortOptions {
   overview: SdkworkTeamSubscriptionOverview;
+  /** Overview the bind call returns; defaults to the current one when omitted. */
+  boundOverview?: SdkworkTeamSubscriptionOverview;
+  /** Rejects the bind call with this failure. */
+  bindError?: SdkworkTeamSubscriptionError;
   /** Rejects every overview read with this failure (scope-required states). */
   overviewError?: SdkworkTeamSubscriptionError;
   /** Own memberships the organization selector lists. */
@@ -100,6 +104,12 @@ function createFakePort(options: FakePortOptions) {
   });
   const port: SdkworkTeamSubscriptionPort = {
     assignSeat: vi.fn(async (userId: string) => ({ assignedAt: "", seatNo: 4, userId })),
+    bindOrganization: vi.fn(async (organizationId: string) => {
+      if (options.bindError !== undefined) {
+        throw options.bindError;
+      }
+      return options.boundOverview ?? { ...options.overview, organizationId };
+    }),
     getCheckoutStatus: vi.fn(async () => ({
       orderId: "order-9",
       qrCode: "weixin://pay/9",
@@ -346,6 +356,123 @@ describe("shared subscription catalog team capability", () => {
     expect(
       screen.getByText("当前账号不属于任何团队组织，因此无法购买或管理团队坐席。"),
     ).toBeInTheDocument();
+  });
+
+  it("offers the team plans to an account without an organization", async () => {
+    // A platform-scoped session answers 200 with an empty organizationId, so the
+    // catalog can sell team seats before an organization exists.
+    const { port, startCheckout } = createFakePort({
+      memberships: [{ isPrimary: true, organizationId: "0", status: "active" }],
+      overview: { ...personalOverview, organizationId: "" },
+    });
+    const view = renderPage({ port });
+
+    fireEvent.click(await screen.findByRole("tab", { name: /团队订阅/u }));
+
+    await waitFor(() => {
+      expect(view.container.querySelector("[data-team-plan-cards]")).not.toBeNull();
+    });
+    // No organization scope, no seat directory.
+    expect(view.container.querySelector("[data-team-seat-directory]")).toBeNull();
+    expect(view.container.querySelector("[data-team-organization-bind]")).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: /订阅 5 个坐席/u }));
+    await waitFor(() => {
+      expect(startCheckout).toHaveBeenCalledWith({
+        action: "purchase",
+        packageId: "42",
+        seats: 5,
+      });
+    });
+  });
+
+  it("renders the organization bind step for a paid-but-unbound team subscription", async () => {
+    const unboundOverview: SdkworkTeamSubscriptionOverview = {
+      autoAssignSeat: true,
+      hasSubscription: true,
+      organizationBindingStatus: "unbound",
+      organizationId: "",
+      planName: "Team Pro",
+      seatPolicy: "strict",
+      seatsAvailable: 5,
+      seatsPurchased: 5,
+      seatsUsed: 0,
+    };
+    const bindError = new SdkworkTeamSubscriptionError(
+      "team_organization_already_subscribed",
+      "team_organization_already_subscribed: the organization already has an active team subscription",
+      409,
+    );
+    const { port } = createFakePort({
+      bindError,
+      boundOverview: {
+        ...unboundOverview,
+        organizationBindingStatus: "bound",
+        organizationId: TEAM_ORGANIZATION_ID,
+      },
+      memberships: [
+        { isPrimary: true, organizationId: "0", status: "active" },
+        { isPrimary: false, organizationId: TEAM_ORGANIZATION_ID, role: "owner", status: "active" },
+      ],
+      overview: unboundOverview,
+    });
+    const view = renderPage({ port });
+
+    fireEvent.click(await screen.findByRole("tab", { name: /团队订阅/u }));
+
+    await waitFor(() => {
+      expect(view.container.querySelector("[data-team-organization-bind]")).not.toBeNull();
+    });
+    // The unbound state never offers the organization-scoped seat directory.
+    expect(view.container.querySelector("[data-team-seat-directory]")).toBeNull();
+    expect(view.container.querySelector("[data-team-seat-policy]")).toBeNull();
+    // A second purchase is not offered while one unbound subscription exists.
+    expect(view.container.querySelector("[data-team-plan-cards]")).toBeNull();
+
+    const option = view.container.querySelector(
+      `[data-team-organization-bind-option="${TEAM_ORGANIZATION_ID}"]`,
+    );
+    expect(option).not.toBeNull();
+    expect(option?.getAttribute("data-team-organization-bind-eligible")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /绑定到此组织/u }));
+
+    await waitFor(() => {
+      expect(port.bindOrganization).toHaveBeenCalledWith(TEAM_ORGANIZATION_ID);
+    });
+    await waitFor(() => {
+      expect(view.container.querySelector(
+        '[data-team-organization-bind-error="team_organization_already_subscribed"]',
+      )).not.toBeNull();
+    });
+  });
+
+  it("marks an organization the caller cannot manage as ineligible", async () => {
+    const { port } = createFakePort({
+      memberships: [
+        { isPrimary: false, organizationId: TEAM_ORGANIZATION_ID, role: "member", status: "active" },
+      ],
+      overview: {
+        autoAssignSeat: true,
+        hasSubscription: true,
+        organizationBindingStatus: "unbound",
+        organizationId: "",
+        seatPolicy: "strict",
+        seatsAvailable: 2,
+        seatsPurchased: 2,
+        seatsUsed: 0,
+      },
+    });
+    const view = renderPage({ port });
+
+    fireEvent.click(await screen.findByRole("tab", { name: /团队订阅/u }));
+
+    await waitFor(() => {
+      expect(view.container.querySelector("[data-team-organization-bind]")).not.toBeNull();
+    });
+    const option = view.container.querySelector(
+      `[data-team-organization-bind-option="${TEAM_ORGANIZATION_ID}"]`,
+    );
+    expect(option?.getAttribute("data-team-organization-bind-eligible")).toBe("false");
   });
 
   it("asks for a fresh sign-in when the platform cannot switch the session", async () => {

@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipAudience, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory, SdkWorkPageDataTeamSeatAssignments, TeamSeatAssignment, TeamSeatAssignmentCommand, TeamSeatPolicyCommand, TeamSeatReconciliation, TeamSubscriptionOverview } from '../types';
+import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipAudience, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory, SdkWorkPageDataTeamSeatAssignments, TeamOrganizationBindCommand, TeamSeatAssignment, TeamSeatAssignmentCommand, TeamSeatPolicyCommand, TeamSeatReconciliation, TeamSubscriptionOverview } from '../types';
 
 
 export class MembershipsTeamSeatsPolicyApi {
@@ -69,6 +69,11 @@ export class MembershipsTeamSubscriptionApi {
 /** Current organization team subscription overview. */
   async retrieve(requestOptions?: ApiRequestOptions): Promise<TeamSubscriptionOverview> {
     return this.client.request<TeamSubscriptionOverview>(appApiPath(`/memberships/team/subscription`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'item' });
+  }
+
+/** Bind the caller's unbound team subscription to an organization. */
+  async bind(body: TeamOrganizationBindCommand, requestOptions?: ApiRequestOptions): Promise<TeamSubscriptionOverview> {
+    return this.client.request<TeamSubscriptionOverview>(appApiPath(`/memberships/team/subscription/bind`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
   }
 }
 

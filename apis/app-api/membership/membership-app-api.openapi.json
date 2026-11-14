@@ -2577,6 +2577,123 @@
         "x-sdkwork-server-request-id": true
       }
     },
+    "/app/v3/api/memberships/team/subscription/bind": {
+      "post": {
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Bind the caller's unbound team subscription to an organization.",
+        "description": "Business rule: a user may buy a team subscription first, then bind an organization and assign seats. This operation consumes the caller's single unbound team subscription (bought with no organization) and turns it into that organization's team subscription: it sets the organization subject, marks the subscription `bound`, records `boundAt` / `boundByUserId`, and writes a `team_org_bind` audit row. The caller must be an active member of the organization holding the IAM capability `TEAM_SEAT_MANAGE`. An organization that already licenses an `active` or `grace_period` team subscription is `409 team_organization_already_subscribed`. Idempotent when the caller's subscription is already bound to the same organization: the bound overview is returned without a second audit row. Unbound seat management answers `409 team_subscription_unbound` until this operation succeeds.",
+        "operationId": "teamSubscription.bind",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamOrganizationBindCommand"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SdkWorkApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SdkWorkResourceData_TeamSubscriptionOverview"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden: the caller does not hold the team seat management capability in the organization.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found: the caller has no unbound team subscription to bind.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict: the organization already has an active team subscription (`team_organization_already_subscribed`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
+        "x-sdkwork-owner": "sdkwork-membership",
+        "x-sdkwork-api-authority": "sdkwork-membership-app-api",
+        "x-sdkwork-domain": "commerce",
+        "x-sdkwork-resource": "memberships.team.subscription",
+        "x-sdkwork-request-context": "WebRequestContext",
+        "x-sdkwork-api-surface": "app-api",
+        "x-sdkwork-server-request-id": true
+      }
+    },
     "/app/v3/api/memberships/team/seats": {
       "get": {
         "tags": [
@@ -4389,11 +4506,19 @@
           "seatPolicy",
           "autoAssignSeat"
         ],
-        "description": "Organization (team) subscription overview with membership-owned facts only. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription. Organization identity, the viewer's role, and member license counts are IAM facts composed by the caller.",
+        "description": "Organization (team) subscription overview with membership-owned facts only. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription. A platform/personal session (no organization, or the platform organization `0`) is also a normal 200 response: it answers the caller's unbound team subscription with an empty `organizationId` and `organizationBindingStatus='unbound'`, and never `403 organization_scope_required`. Organization identity, the viewer's role, and member license counts are IAM facts composed by the caller.",
         "properties": {
           "organizationId": {
             "type": "string",
-            "description": "IAM organization id resolved from the authenticated principal, never from a request header."
+            "description": "IAM organization id resolved from the authenticated principal, never from a request header. Empty when the answer is the caller's unbound subscription (a team subscription bought before an organization was chosen)."
+          },
+          "organizationBindingStatus": {
+            "type": "string",
+            "enum": [
+              "bound",
+              "unbound"
+            ],
+            "description": "Organization binding lifecycle of the reported subscription. `unbound` means the buyer paid for team seats before choosing an organization: seats cannot be assigned until `POST /team/subscription/bind` binds the subscription to an organization. Absent when the caller has no team subscription."
           },
           "hasSubscription": {
             "type": "boolean"
@@ -4488,6 +4613,20 @@
           "userId": {
             "type": "string",
             "description": "IAM user id of an active member of the current organization."
+          }
+        }
+      },
+      "TeamOrganizationBindCommand": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organizationId"
+        ],
+        "description": "Bind command for the caller's unbound team subscription. The caller must hold the IAM `TEAM_SEAT_MANAGE` capability in the target organization, and the organization may license only one team subscription: a second one answers `409 team_organization_already_subscribed`.",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "description": "IAM organization id the unbound team subscription is bound to."
           }
         }
       },

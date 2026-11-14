@@ -23,7 +23,9 @@ export {
   parseOwnMemberships,
   resolveTeamOrganizationId,
   resolveTeamViewerRole,
+  teamOrganizationRoleLabelKey,
   teamRosterDisplayName,
+  type SdkworkTeamRoleCopy,
   type SdkworkTeamSeatComposition,
   type SdkworkTeamSeatDirectoryRow,
 } from "./team-roster-composition";
@@ -48,6 +50,10 @@ export {
   type SdkworkTeamPlanPackageLike,
   type SdkworkTeamSeatBounds,
 } from "./team-plan-pricing";
+export {
+  SdkworkTeamOrganizationBindPanel,
+  type SdkworkTeamOrganizationBindPanelProps,
+} from "./team-organization-bind-panel";
 export {
   SdkworkTeamOrganizationSelector,
   type SdkworkTeamOrganizationSelectorProps,
@@ -80,6 +86,7 @@ export {
   SDKWORK_TEAM_ERROR_REASONS,
   SDKWORK_TEAM_PLATFORM_ORGANIZATION_ID,
   SdkworkTeamSubscriptionError,
+  isSdkworkTeamSubscriptionUnbound,
   loadSdkworkTeamRoster,
   loadSdkworkTeamSnapshot,
   normalizeSdkworkTeamError,
@@ -90,6 +97,7 @@ export {
   type SdkworkTeamCheckoutPayment,
   type SdkworkTeamErrorReason,
   type SdkworkTeamMembershipKind,
+  type SdkworkTeamOrganizationBindingStatus,
   type SdkworkTeamOwnMembership,
   type SdkworkTeamOrganizationChoice,
   type SdkworkTeamPackage,

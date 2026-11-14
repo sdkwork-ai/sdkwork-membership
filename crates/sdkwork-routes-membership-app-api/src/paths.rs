@@ -47,6 +47,10 @@ pub const PURCHASES: &str = "/purchases";
 /// Team subscription overview: `GET /app/v3/api/memberships/team/subscription`
 pub const TEAM_SUBSCRIPTION: &str = "/team/subscription";
 
+/// Bind an unbound team subscription to an organization:
+/// `POST /app/v3/api/memberships/team/subscription/bind`
+pub const TEAM_SUBSCRIPTION_BIND: &str = "/team/subscription/bind";
+
 /// Team seat directory: `GET /app/v3/api/memberships/team/seats`
 pub const TEAM_SEATS: &str = "/team/seats";
 

@@ -71,6 +71,26 @@ export function resolveTeamPlanErrorCopy(
         fallback: "未选择团队组织。",
         key: "token_plan.team.no_org",
       };
+    case "team_subscription_unbound":
+      return {
+        fallback: "团队订阅尚未绑定组织，请先完成组织绑定再管理坐席。",
+        key: "token_plan.team.error_subscription_unbound",
+      };
+    case "team_subscription_already_unbound":
+      return {
+        fallback: "当前账号已有一笔未绑定组织的团队订阅，请先绑定组织后再购买。",
+        key: "token_plan.team.error_subscription_already_unbound",
+      };
+    case "team_subscription_not_found":
+      return {
+        fallback: "未找到可绑定的团队订阅，请先完成团队订阅购买。",
+        key: "token_plan.team.error_subscription_not_found",
+      };
+    case "team_organization_already_subscribed":
+      return {
+        fallback: "该组织已拥有生效中的团队订阅，无法重复绑定。",
+        key: "token_plan.team.error_organization_already_subscribed",
+      };
     case "organization_sign_in_required":
       return {
         fallback: "该平台需要在登录时选择组织，请重新登录并选择团队组织。",

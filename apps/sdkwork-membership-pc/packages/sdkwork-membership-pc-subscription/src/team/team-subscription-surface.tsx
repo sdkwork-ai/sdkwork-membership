@@ -7,19 +7,22 @@ import type {
   SdkworkSubscriptionCatalogCheckoutPlan,
 } from "../subscription-catalog-host";
 import type { SdkworkSubscriptionPurchaseResult } from "../subscription-service";
+import { SdkworkTeamOrganizationBindPanel } from "./team-organization-bind-panel";
 import { SdkworkTeamOrganizationSelector } from "./team-organization-selector";
 import { SdkworkTeamPlanCards, type SdkworkTeamBuyRequest } from "./team-plan-cards";
 import { resolveTeamPlanErrorCopy } from "./team-plan-error-copy";
 import { formatTeamCnyAmount } from "./team-plan-pricing";
-import { applyOverviewToComposition } from "./team-roster-composition";
+import { applyOverviewToComposition, teamOrganizationRoleLabelKey } from "./team-roster-composition";
 import { SdkworkTeamSeatDirectory } from "./team-seat-directory";
 import { SdkworkTeamSeatPolicyPanel } from "./team-seat-policy";
 import { SdkworkTeamSubscriptionSummary } from "./team-subscription-summary";
 import {
+  isSdkworkTeamSubscriptionUnbound,
   loadSdkworkTeamSnapshot,
   normalizeSdkworkTeamError,
   resolveTeamOrganizationChoices,
   type SdkworkTeamCheckoutPayment,
+  type SdkworkTeamErrorReason,
   type SdkworkTeamOwnMembership,
   type SdkworkTeamOrganizationChoice,
   type SdkworkTeamSnapshot,
@@ -208,6 +211,8 @@ export function SdkworkTeamSubscriptionSurface() {
   const [organizationNames, setOrganizationNames] = useState<Record<string, string>>({});
   const [isSwitching, setIsSwitching] = useState(false);
   const [switchError, setSwitchError] = useState<SdkworkTeamSubscriptionError | null>(null);
+  const [isBinding, setIsBinding] = useState(false);
+  const [bindErrorReason, setBindErrorReason] = useState<SdkworkTeamErrorReason | null>(null);
 
   useEffect(() => {
     if (!state.isBootstrapped && !state.isLoading && !state.lastError) {
@@ -314,6 +319,34 @@ export function SdkworkTeamSubscriptionSurface() {
   ) : null;
 
   /**
+   * Binds the paid-but-unbound team subscription to the selected organization.
+   *
+   * On success the whole team surface re-reads its snapshot, which is what turns
+   * the bind panel into the bound summary plus the seat directory.
+   */
+  const handleBindOrganization = useCallback((organizationId: string): void => {
+    if (isBinding) {
+      return;
+    }
+    setIsBinding(true);
+    setBindErrorReason(null);
+    void port.bindOrganization(organizationId)
+      .then(() => {
+        onNotify(
+          copy("token_plan.team.bind_success", "团队订阅已绑定到组织，现在可以分配坐席了。"),
+          "success",
+        );
+        return bootstrap();
+      })
+      .catch((error: unknown) => {
+        setBindErrorReason(normalizeSdkworkTeamError(error).reason);
+      })
+      .finally(() => {
+        setIsBinding(false);
+      });
+  }, [bootstrap, copy, isBinding, onNotify, port]);
+
+  /**
    * Starts the order-owned checkout for a seat purchase and hands the created
    * payment to the host dialog. The card keeps its own pending/error state by
    * awaiting this promise.
@@ -378,10 +411,17 @@ export function SdkworkTeamSubscriptionSurface() {
   const composition = snapshot?.composition;
   const lastError = state.lastError;
   const errorCopy = lastError ? resolveTeamPlanErrorCopy(lastError.reason) : null;
-  const roleCopy = ROLE_COPY[composition?.viewerRole ?? ""] ?? null;
-  const organizationTitle = composition?.organizationName?.trim()
-    || composition?.organizationId?.trim()
-    || copy("token_plan.team.no_org", "未选择组织");
+  // A team subscription bought before an organization was chosen: the surface
+  // shows the plan cards (first purchase) or the bind step (after payment)
+  // instead of the organization-scoped summary.
+  const isUnbound = overview ? isSdkworkTeamSubscriptionUnbound(overview) : false;
+  const viewerRoleCopy = teamOrganizationRoleLabelKey(composition?.viewerRole);
+  const roleCopy = ROLE_COPY[composition?.viewerRole ?? ""] ?? viewerRoleCopy ?? null;
+  const organizationTitle = isUnbound
+    ? copy("token_plan.team.unbound_title", "尚未绑定组织")
+    : composition?.organizationName?.trim()
+      || composition?.organizationId?.trim()
+      || copy("token_plan.team.no_org", "未选择组织");
 
   return (
     <div
@@ -491,7 +531,7 @@ export function SdkworkTeamSubscriptionSurface() {
                 <h1 className="min-w-0 truncate text-2xl font-semibold tracking-tight text-slate-950 dark:text-white">
                   {organizationTitle}
                 </h1>
-                {roleCopy ? (
+                {!isUnbound && roleCopy ? (
                   <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700 dark:bg-white/10 dark:text-slate-200">
                     <ShieldCheck aria-hidden="true" className="h-3 w-3" />
                     {copy(roleCopy.key, roleCopy.fallback)}
@@ -499,10 +539,15 @@ export function SdkworkTeamSubscriptionSurface() {
                 ) : null}
               </div>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                {copy(
-                  "token_plan.team.subtitle",
-                  "一个组织、一张账单，坐席分配给团队成员。",
-                )}
+                {isUnbound
+                  ? copy(
+                    "token_plan.team.unbound_hint",
+                    "团队订阅已购买成功。选择一个组织完成绑定后，即可把坐席分配给团队成员。",
+                  )
+                  : copy(
+                    "token_plan.team.subtitle",
+                    "一个组织、一张账单，坐席分配给团队成员。",
+                  )}
               </p>
             </div>
 
@@ -520,7 +565,7 @@ export function SdkworkTeamSubscriptionSurface() {
             </Button>
           </header>
 
-          {overview.hasSubscription ? (
+          {overview.hasSubscription && !isUnbound ? (
             <div className="space-y-5">
               {isExpanding ? (
                 <SdkworkTeamPlanCards
@@ -561,8 +606,44 @@ export function SdkworkTeamSubscriptionSurface() {
                 />
               ) : null}
             </div>
+          ) : overview.hasSubscription && isUnbound ? (
+            // Paid team seats waiting for an organization: the bind step replaces
+            // the seat directory, and a second purchase is not offered because a
+            // buyer may own at most one unbound team subscription.
+            <div className="space-y-5">
+              <SdkworkTeamOrganizationBindPanel
+                {...(bindErrorReason ? { errorReason: bindErrorReason } : {})}
+                isBinding={isBinding}
+                onBind={handleBindOrganization}
+                onDismissError={() => { setBindErrorReason(null) }}
+                organizations={organizationChoices}
+                seatsPurchased={overview.seatsPurchased}
+              />
+
+              <SdkworkTeamSubscriptionSummary
+                composition={composition}
+                locale={locale}
+                overview={overview}
+              />
+            </div>
           ) : (
-            <SdkworkTeamPlanCards initialSeats={0} mode="subscribe" onBuy={startCheckout} />
+            <div className="space-y-5">
+              <SdkworkTeamPlanCards
+                initialSeats={0}
+                mode="subscribe"
+                onBuy={startCheckout}
+              />
+              {isUnbound && organizationChoices.length > 0 ? (
+                <SdkworkTeamOrganizationBindPanel
+                  {...(bindErrorReason ? { errorReason: bindErrorReason } : {})}
+                  isBinding={isBinding}
+                  onBind={handleBindOrganization}
+                  onDismissError={() => { setBindErrorReason(null) }}
+                  organizations={organizationChoices}
+                  seatsPurchased={0}
+                />
+              ) : null}
+            </div>
           )}
         </>
       ) : null}

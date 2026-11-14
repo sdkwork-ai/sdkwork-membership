@@ -81,6 +81,30 @@ export function canManageTeamSeats(role: SdkworkTeamMembershipKind | undefined):
   return role === "owner" || role === "admin";
 }
 
+/** Localized copy for one organization role. */
+export interface SdkworkTeamRoleCopy {
+  fallback: string;
+  key: string;
+}
+
+const ROLE_COPY: Record<SdkworkTeamMembershipKind, SdkworkTeamRoleCopy> = {
+  admin: { fallback: "管理员", key: "token_plan.team.role_admin" },
+  member: { fallback: "成员", key: "token_plan.team.role_member" },
+  owner: { fallback: "所有者", key: "token_plan.team.role_owner" },
+};
+
+/**
+ * Localized lookup for an organization role label.
+ *
+ * @param role - the caller's role in an organization, when known.
+ * @returns the i18n key plus its default copy, or `undefined` without a role.
+ */
+export function teamOrganizationRoleLabelKey(
+  role: SdkworkTeamMembershipKind | undefined,
+): SdkworkTeamRoleCopy | undefined {
+  return role ? ROLE_COPY[role] : undefined;
+}
+
 /**
  * Parses the caller's own memberships (`iam.organizationMemberships.list`).
  *

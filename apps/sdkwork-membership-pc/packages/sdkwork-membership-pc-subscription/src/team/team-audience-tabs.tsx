@@ -29,6 +29,11 @@ const AUDIENCES: readonly SdkworkSubscriptionAudience[] = ["personal", "team"];
  * The switch only renders when the host supplies a team capability, so a page
  * without a team port keeps today's personal-only catalog.
  *
+ * Layout is intrinsic: the strip is an `inline-flex` row with one gap unit
+ * between the two tabs, and each tab keeps its icon and label on a single line
+ * (`shrink-0` + `whitespace-nowrap`). Nothing stretches the pill across the
+ * viewport, so the two labels never collide even in a 320px-wide dark shell.
+ *
  * @param props - active audience, copy overrides, change handler, and lookup.
  * @returns the audience tab strip.
  */
@@ -39,13 +44,13 @@ export function SdkworkSubscriptionAudienceTabs({
   translate,
 }: SdkworkSubscriptionAudienceTabsProps) {
   return (
-    <div
-      aria-label={labels?.label ?? translate("token_plan.audience.label", "订阅类型")}
-      className="flex justify-center"
-      data-token-plan-audience-tabs
-      role="tablist"
-    >
-      <div className="inline-flex rounded-full border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-white/5 max-sm:grid max-sm:w-full max-sm:grid-cols-2 max-sm:rounded-2xl">
+    <div className="flex w-full min-w-0 justify-center">
+      <div
+        aria-label={labels?.label ?? translate("token_plan.audience.label", "订阅类型")}
+        className="inline-flex max-w-full items-center gap-2 rounded-full border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-white/5"
+        data-token-plan-audience-tabs
+        role="tablist"
+      >
         {AUDIENCES.map((audience) => {
           const isActive = audience === active;
           const Icon = audience === "personal" ? UserRound : Building2;
@@ -55,7 +60,7 @@ export function SdkworkSubscriptionAudienceTabs({
           return (
             <button
               aria-selected={isActive}
-              className={`relative flex items-center justify-center gap-2 rounded-full px-7 py-2.5 text-[15px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 max-sm:rounded-xl dark:focus-visible:ring-offset-black ${
+              className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-black ${
                 isActive
                   ? "bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white"
                   : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
@@ -66,8 +71,8 @@ export function SdkworkSubscriptionAudienceTabs({
               role="tab"
               type="button"
             >
-              <Icon aria-hidden="true" className="h-4 w-4" />
-              <span className="whitespace-nowrap">{label}</span>
+              <Icon aria-hidden="true" className="h-4 w-4 shrink-0" />
+              <span>{label}</span>
             </button>
           );
         })}

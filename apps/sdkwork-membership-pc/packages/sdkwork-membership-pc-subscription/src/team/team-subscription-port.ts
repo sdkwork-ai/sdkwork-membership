@@ -32,10 +32,33 @@ export type SdkworkTeamSeatPolicy = "strict" | "flex_overflow";
 /** IAM organization role vocabulary shared by the roster and own memberships. */
 export type SdkworkTeamMembershipKind = "owner" | "admin" | "member";
 
+/**
+ * Organization binding lifecycle of a team subscription.
+ *
+ * - `bound`: the subscription licenses a real IAM organization;
+ * - `unbound`: the buyer paid for team seats before choosing an organization.
+ *   Seats cannot be assigned until one is bound, and the buyer is the only
+ *   person who can bind it.
+ */
+export type SdkworkTeamOrganizationBindingStatus = "bound" | "unbound";
+
 /** Organization (team) subscription overview (`GET /memberships/team/subscription`). */
 export interface SdkworkTeamSubscriptionOverview {
-  /** IAM organization id resolved from the authenticated principal. */
+  /**
+   * IAM organization id resolved from the authenticated principal.
+   *
+   * Empty when the answer is the caller's unbound team subscription: the
+   * subscription exists but no organization was chosen yet.
+   */
   readonly organizationId: string;
+  /**
+   * Organization binding lifecycle of the reported subscription.
+   *
+   * Absent when the caller has no team subscription at all. `organizationId`
+   * being empty together with `organizationBindingStatus === "unbound"` is the
+   * "buy first, bind later" state the surface renders.
+   */
+  readonly organizationBindingStatus?: SdkworkTeamOrganizationBindingStatus;
   /** `false` is a normal answer for an organization without an active plan. */
   readonly hasSubscription: boolean;
   readonly subscriptionId?: string;
@@ -211,6 +234,20 @@ export interface SdkworkTeamSubscriptionPort {
   updateSeatPolicy(input: SdkworkTeamSeatPolicyInput): Promise<SdkworkTeamSubscriptionOverview>;
   /** Reconciles the seat ledger with the IAM-owned roster. */
   reconcileSeats(): Promise<SdkworkTeamSeatReconciliationResult>;
+  /**
+   * Binds the caller's unbound team subscription to an organization.
+   *
+   * This is the second half of the "buy first, bind later" rule: the buyer paid
+   * for team seats without an organization, and this call turns that purchase
+   * into that organization's team subscription. The caller must be an active
+   * member of the organization allowed to manage team seats; the organization
+   * may license only one team subscription at a time. Binding is idempotent for
+   * a subscription already bound to the same organization.
+   *
+   * @param organizationId - IAM organization id to bind the subscription to.
+   * @returns the bound team subscription overview.
+   */
+  bindOrganization(organizationId: string): Promise<SdkworkTeamSubscriptionOverview>;
   /** Starts the order-owned membership checkout for a team plan. */
   startCheckout(input: SdkworkTeamCheckoutInput): Promise<SdkworkTeamCheckoutPayment>;
   /** Polls one team checkout order through the same order-owned service. */
@@ -242,6 +279,10 @@ export const SDKWORK_TEAM_ERROR_REASONS = [
   "last_seat_owner_required",
   "seat_assignment_not_found",
   "organization_scope_required",
+  "team_subscription_unbound",
+  "team_subscription_already_unbound",
+  "team_subscription_not_found",
+  "team_organization_already_subscribed",
 ] as const;
 
 /** Machine-readable reason for a team seat/subscription failure. */
@@ -480,12 +521,33 @@ function readTeamSeatLimit(overview: SdkworkTeamSubscriptionOverview): number {
 }
 
 /**
+ * True when the overview describes a team subscription that is not bound to an
+ * organization yet ("buy first, bind later").
+ *
+ * The seat ledger and the organization roster are organization-scoped, so the
+ * unbound state has neither: the surface renders the bind step instead of the
+ * seat directory.
+ *
+ * @param overview - the membership-owned overview.
+ * @returns `true` for an unbound team subscription.
+ */
+export function isSdkworkTeamSubscriptionUnbound(
+  overview: SdkworkTeamSubscriptionOverview,
+): boolean {
+  return overview.organizationBindingStatus === "unbound";
+}
+
+/**
  * Loads the complete team surface state in two parallel stages.
  *
  * Stage one fetches the membership overview, the membership seat assignments,
  * and the caller's own IAM membership at the same time. Stage two runs once the
  * organization id (authoritative from IAM) and the purchased seat bound are
  * known, and fetches the IAM roster walk and the organization name in parallel.
+ *
+ * An unbound subscription (bought without an organization) skips both
+ * organization-scoped stages: there is no organization to read a roster, a seat
+ * ledger, or a name from, and the surface renders the bind step instead.
  *
  * @param port - the host port owning every read.
  * @param preloadedMemberships - own memberships the surface already fetched for
@@ -496,13 +558,34 @@ export async function loadSdkworkTeamSnapshot(
   port: SdkworkTeamSubscriptionPort,
   preloadedMemberships?: readonly SdkworkTeamOwnMembership[],
 ): Promise<SdkworkTeamSnapshot> {
-  const [overview, ownMemberships, allSeatAssignments] = await Promise.all([
-    port.getOverview(),
+  const overview = await port.getOverview();
+  const [ownMemberships, allSeatAssignments] = await Promise.all([
     preloadedMemberships === undefined
       ? port.listOwnMemberships()
       : Promise.resolve(preloadedMemberships),
-    port.listSeatAssignments(TEAM_SEAT_PAGE_SIZE * TEAM_SEAT_MAX_PAGES),
+    port.listSeatAssignments(TEAM_SEAT_PAGE_SIZE * TEAM_SEAT_MAX_PAGES).catch((error: unknown) => {
+      // A platform-scoped session has no organization seat ledger yet. The
+      // unbound state is a normal answer, so an empty seat list is expected
+      // there instead of failing the whole surface.
+      if (isSdkworkTeamSubscriptionUnbound(overview)) {
+        return [] as SdkworkTeamSeatAssignment[];
+      }
+      throw error;
+    }),
   ]);
+
+  if (isSdkworkTeamSubscriptionUnbound(overview)) {
+    const organizationId = overview.organizationId.trim();
+    const composition = composeTeamSeatComposition({
+      membersTotal: 0,
+      organizationId,
+      overview,
+      roster: [],
+      seatAssignments: allSeatAssignments,
+      viewerRole: resolveTeamViewerRole(ownMemberships, organizationId),
+    });
+    return { composition, overview, seatAssignments: allSeatAssignments };
+  }
 
   const organizationId = resolveTeamOrganizationId(
     ownMemberships,

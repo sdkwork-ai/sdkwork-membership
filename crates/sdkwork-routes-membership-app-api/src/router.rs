@@ -29,9 +29,9 @@ use sdkwork_membership_repository_sqlx::{
     is_valid_membership_audience, is_valid_membership_category, is_valid_membership_seat_policy,
     AppMembershipEntityIdGenerator, AppMembershipListQuery, AppMembershipPointsHistoryQuery,
     AppMembershipPurchaseOutcome, AppMembershipResult, AppMembershipStore, AppMembershipSubject,
-    AppMembershipTeamScope, AssignTeamSeatCommand, FeatureAccessCheckQuery,
-    PostgresCommerceMembershipStore, ReconcileTeamSeatsCommand, RevokeTeamSeatCommand,
-    SubmitMembershipPurchaseCommand, TeamSeatsQuery, TeamSubscriptionQuery,
+    AppMembershipTeamScope, AssignTeamSeatCommand, BindTeamSubscriptionCommand,
+    FeatureAccessCheckQuery, PostgresCommerceMembershipStore, ReconcileTeamSeatsCommand,
+    RevokeTeamSeatCommand, SubmitMembershipPurchaseCommand, TeamSeatsQuery, TeamSubscriptionQuery,
     UpdateTeamSeatPolicyCommand,
 };
 use sdkwork_web_core::WebRequestContext;
@@ -127,6 +127,18 @@ struct TeamSeatAssignmentRequest {
 struct TeamSeatPolicyRequest {
     seat_policy: String,
     auto_assign_seat: bool,
+}
+
+/// `POST /team/subscription/bind` body.
+///
+/// The target organization is an explicit request field (unlike every other
+/// team route, where the organization comes from the authenticated principal):
+/// binding is exactly the act of choosing an organization for a subscription
+/// bought without one.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TeamOrganizationBindRequest {
+    organization_id: String,
 }
 
 /// Raw principal scope for the organization (team) endpoints.
@@ -314,6 +326,10 @@ fn app_membership_router_with_state(
         .route(
             "/app/v3/api/memberships/team/subscription",
             get(fetch_team_subscription),
+        )
+        .route(
+            "/app/v3/api/memberships/team/subscription/bind",
+            post(bind_team_subscription),
         )
         .route(
             "/app/v3/api/memberships/team/seats",
@@ -957,6 +973,12 @@ fn current_unix_timestamp() -> i64 {
 /// request never carries it as a header — and is used both as the IAM
 /// organization id for the directory projection and as the team subscription
 /// `subject_id`.
+///
+/// A platform/personal session (no organization claim, or the platform
+/// organization `0`) resolves to an **empty** organization id: the store then
+/// answers the caller's unbound team subscription instead of rejecting the
+/// request. Only a missing trusted subject is `401`; `organization_scope_required`
+/// is no longer a route-level rejection for the team surface.
 fn resolve_required_team_scope(ctx: &WebRequestContext) -> Result<TeamRequestScope, ApiProblem> {
     let principal = ctx.principal();
     team_scope_from_principal_parts(
@@ -985,13 +1007,14 @@ fn team_scope_from_principal_parts(
             "trusted request subject is required for membership team operations",
         ));
     }
+    // The platform organization sentinel is not a team scope: it resolves to
+    // the caller's unbound subscription.
     let organization_id = organization_id.unwrap_or_default().trim().to_owned();
-    if organization_id.is_empty() || organization_id == "0" {
-        return Err(ApiProblem::forbidden(
-            "organization_scope_required: team operations require an organization-scoped session",
-        )
-        .with_reason("organization_scope_required"));
-    }
+    let organization_id = if organization_id == "0" {
+        String::new()
+    } else {
+        organization_id
+    };
     Ok(TeamRequestScope {
         tenant_id,
         organization_id,
@@ -1019,8 +1042,15 @@ fn map_team_service_error(error: CommerceServiceError) -> ApiProblem {
         "team_subscription_inactive"
         | "seat_capacity_exceeded"
         | "seat_already_assigned"
-        | "last_seat_owner_required" => ApiProblem::conflict(message).with_reason(reason),
-        "seat_assignment_not_found" => ApiProblem::not_found(message).with_reason(reason),
+        | "last_seat_owner_required"
+        | "team_subscription_unbound"
+        | "team_subscription_already_unbound"
+        | "team_organization_already_subscribed" => {
+            ApiProblem::conflict(message).with_reason(reason)
+        }
+        "seat_assignment_not_found" | "team_subscription_not_found" => {
+            ApiProblem::not_found(message).with_reason(reason)
+        }
         "not_organization_member" => ApiProblem::bad_request(message).with_reason(reason),
         _ => ApiProblem::from_service("membership team seat operation is unavailable", error),
     }
@@ -1042,6 +1072,60 @@ async fn fetch_team_subscription(
                 .await
                 .map_err(map_team_service_error)?;
             Ok(item_envelope(data))
+        }
+        .await,
+    )
+}
+
+/// Bind the caller's unbound team subscription to an organization.
+///
+/// Business rule: a user may buy a team subscription before owning an
+/// organization, so the purchase is fulfilled as an `unbound` subscription and
+/// this route is the step that turns it into an organization subscription. The
+/// caller must hold the IAM `TEAM_SEAT_MANAGE` capability in the target
+/// organization, and the organization may license only one team subscription.
+/// Idempotent when the caller's subscription is already bound to that same
+/// organization; the bound overview is returned either way.
+async fn bind_team_subscription(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+    request: Result<Json<TeamOrganizationBindRequest>, JsonRejection>,
+) -> axum::response::Response {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(rejection) => {
+            return ApiProblem::bad_request(format!(
+                "membership team organization bind request body is invalid: {rejection}"
+            ))
+            .with_reason("invalid_request")
+            .into_response_for(&ctx);
+        }
+    };
+    finish_api_json(
+        &ctx,
+        async {
+            let caller = resolve_required_team_scope(&ctx)?;
+            let organization_id = request.organization_id.trim().to_owned();
+            if organization_id.is_empty() || organization_id == "0" {
+                return Err(ApiProblem::bad_request(
+                    "membership team organization id must name an organization",
+                )
+                .with_reason("invalid_organization_id"));
+            }
+            state
+                .store
+                .bind_team_subscription(BindTeamSubscriptionCommand {
+                    scope: TeamRequestScope {
+                        tenant_id: caller.tenant_id,
+                        organization_id,
+                        user_id: caller.user_id,
+                    }
+                    .into_scope(),
+                    requested_at: current_timestamp_string(),
+                })
+                .await
+                .map_err(map_team_service_error)
+                .map(item_envelope)
         }
         .await,
     )
@@ -1263,12 +1347,18 @@ mod tests {
     }
 
     #[test]
-    fn team_scope_requires_an_organization_scoped_principal() {
-        let tenant_level = team_scope_from_principal_parts(Some("100001"), None, Some("42"));
-        assert!(tenant_level.is_err());
+    fn team_scope_resolves_a_platform_session_to_an_empty_organization() {
+        // A personal/platform session is a valid team reader: the store answers
+        // its unbound subscription instead of the route rejecting the request.
+        let tenant_level = team_scope_from_principal_parts(Some("100001"), None, Some("42"))
+            .expect("tenant-level scope");
+        assert_eq!(tenant_level.organization_id, "");
+        assert_eq!(tenant_level.tenant_id, "100001");
+        assert_eq!(tenant_level.user_id, "42");
 
-        let sentinel_scope = team_scope_from_principal_parts(Some("100001"), Some("0"), Some("42"));
-        assert!(sentinel_scope.is_err());
+        let sentinel_scope = team_scope_from_principal_parts(Some("100001"), Some("0"), Some("42"))
+            .expect("platform organization scope");
+        assert_eq!(sentinel_scope.organization_id, "");
 
         let organization_scoped =
             team_scope_from_principal_parts(Some("100001"), Some("601"), Some("42"))
@@ -1277,6 +1367,7 @@ mod tests {
         assert_eq!(organization_scoped.tenant_id, "100001");
         assert_eq!(organization_scoped.user_id, "42");
 
+        // Only a missing trusted subject is unauthenticated.
         let unauthenticated = team_scope_from_principal_parts(None, Some("601"), None);
         assert!(unauthenticated.is_err());
     }

@@ -37,7 +37,8 @@ use crate::{
     AppMembershipPointsHistoryQuery, AppMembershipPrivilegeUsageResponse,
     AppMembershipPurchaseOutcome, AppMembershipReadFuture, AppMembershipResult,
     AppMembershipStatusResponse, AppMembershipStore, AppMembershipSubject, AppMembershipTeamScope,
-    AssignTeamSeatCommand, ConsumeSubscriptionQuotaCommand, CouponSubscriptionFulfillmentOutcome,
+    AssignTeamSeatCommand, BindTeamSubscriptionCommand, ConsumeSubscriptionQuotaCommand,
+    CouponSubscriptionFulfillmentOutcome,
     CreateAdminMembershipPackageCommand, CreateAdminMembershipPackageGroupCommand,
     CreateAdminMembershipPlanCommand, DeleteAdminMembershipPackageCommand,
     DeleteAdminMembershipPackageGroupCommand, DeleteAdminMembershipPlanCommand,
@@ -781,6 +782,15 @@ impl AppMembershipStore for PostgresCommerceMembershipStore {
     ) -> AppMembershipReadFuture<'a, TeamSeatReconciliation> {
         Box::pin(async move {
             reconcile_team_seats(&self.pool, self.organization_directory.as_ref(), command).await
+        })
+    }
+
+    fn bind_team_subscription<'a>(
+        &'a self,
+        command: BindTeamSubscriptionCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview> {
+        Box::pin(async move {
+            bind_team_subscription(&self.pool, self.organization_directory.as_ref(), command).await
         })
     }
 }
@@ -4747,14 +4757,56 @@ async fn persist_membership_subscription(
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .unwrap_or_else(|| command.subject.organization_id.to_string());
+    // A team order placed from a session without a real organization is
+    // fulfilled as an *unbound* subscription: the buyer may pay for team seats
+    // first and bind an organization afterwards. It keeps
+    // subject_type='organization' with an empty subject_id (never the platform
+    // sentinel '0'), so no organization-scoped read can ever match it.
+    let unbound = team && !is_team_organization_scope(&organization_subject_id);
     let subscription_subject_type = if team { "organization" } else { "user" };
-    let subscription_subject_id = if team {
+    let subscription_subject_id = if unbound {
+        String::new()
+    } else if team {
         organization_subject_id.clone()
     } else {
         command.subject.user_id.to_string()
     };
+    // Binding writes the real organization scope; an unbound row keeps the
+    // platform scope until POST /team/subscription/bind consumes it.
+    let subscription_organization_id = if unbound {
+        "0".to_owned()
+    } else {
+        command.subject.organization_id.to_string()
+    };
 
     if binding.persistence_mode == MembershipPurchasePersistenceMode::New {
+        if unbound {
+            // At most one active unbound team subscription per buyer: a second
+            // unbound purchase would leave two paid seat pools with no owner.
+            let existing_unbound: bool = sqlx::query_scalar(
+                r#"
+                SELECT EXISTS(
+                    SELECT 1
+                    FROM membership_subscription ms
+                    WHERE ms.tenant_id = CAST($1 AS TEXT)
+                      AND ms.owner_user_id = CAST($2 AS TEXT)
+                      AND ms.subject_type = 'organization'
+                      AND ms.organization_binding_status = 'unbound'
+                      AND ms.status IN ('pending_activation', 'active', 'grace_period')
+                )
+                "#,
+            )
+            .bind(command.subject.tenant_id)
+            .bind(command.subject.user_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(|error| store_error("failed to inspect active unbound team subscription", error))?;
+            if existing_unbound {
+                return Err(CommerceServiceError::conflict(
+                    "team_subscription_already_unbound: the caller already owns an unbound team subscription",
+                ));
+            }
+        }
         if team {
             sqlx::query(
                 r#"
@@ -4763,18 +4815,19 @@ async fn persist_membership_subscription(
                      owner_user_id, plan_id, plan_version_id, package_id, current_period_id,
                      source_order_id, status, starts_at, expires_at,
                      grace_until, cancel_at_period_end, seats_purchased, seats_used, seat_policy,
-                     auto_assign_seat, request_no, idempotency_key, created_at, updated_at)
+                     auto_assign_seat, organization_binding_status, request_no, idempotency_key,
+                     created_at, updated_at)
                 VALUES
                     ($1, CAST($2 AS TEXT), CAST($3 AS TEXT), $18, $4, 'organization', CAST($5 AS TEXT),
                      CAST($6 AS TEXT), $7, $8, $9, $10, $11, 'pending_activation', $12::timestamptz, $13::timestamptz,
-                     NULL, 0, $19, 0, 'strict', 1, $14, $15, $16::timestamptz, $17::timestamptz)
+                     NULL, 0, $19, 0, 'strict', 1, $20, $14, $15, $16::timestamptz, $17::timestamptz)
                 "#,
             )
             .bind(&binding.membership_uuid)
             .bind(command.subject.tenant_id)
-            .bind(command.subject.organization_id)
+            .bind(&subscription_organization_id)
             .bind(&binding.membership_uuid)
-            .bind(&organization_subject_id)
+            .bind(&subscription_subject_id)
             .bind(command.subject.user_id)
             .bind(&plan_storage_id)
             .bind(&plan_version_storage_id)
@@ -4789,6 +4842,7 @@ async fn persist_membership_subscription(
             .bind(&command.requested_at)
             .bind(&plan.item.category)
             .bind(seats)
+            .bind(if unbound { "unbound" } else { "bound" })
             .execute(&mut **tx)
             .await
             .map_err(|error| store_error("failed to insert membership subscription", error))?;
@@ -4853,6 +4907,7 @@ async fn persist_membership_subscription(
               AND (organization_id = '0' OR organization_id = CAST($14 AS TEXT))
               AND subject_type = $19
               AND subject_id = CAST($15 AS TEXT)
+              AND organization_binding_status = 'bound'
             "#,
         )
         .bind(&plan_storage_id)
@@ -4894,7 +4949,7 @@ async fn persist_membership_subscription(
     )
     .bind(&period_id)
     .bind(command.subject.tenant_id)
-    .bind(command.subject.organization_id)
+    .bind(&subscription_organization_id)
     .bind(&period_id)
     .bind(&binding.membership_uuid)
     .bind(&subscription_subject_id)
@@ -4914,16 +4969,23 @@ async fn persist_membership_subscription(
     .map_err(|error| store_error("failed to insert membership period", error))?;
 
     if team {
+        // Audit metadata names the fulfillment mode: `unbound` seats have no
+        // organization yet, and `bound` seats license the buying organization.
+        let audit_metadata = if unbound {
+            serde_json::json!({ "seats": seats, "mode": "unbound" })
+        } else {
+            serde_json::json!({ "seats": seats })
+        };
         insert_seat_change_log(
             tx,
             &command.subject.tenant_id.to_string(),
-            &command.subject.organization_id.to_string(),
+            &subscription_organization_id,
             &binding.membership_uuid,
             &command.subject.user_id.to_string(),
             &command.subject.user_id.to_string(),
             "seat_purchase",
             "seat_purchase",
-            serde_json::json!({ "seats": seats }),
+            audit_metadata,
             &command.requested_at,
         )
         .await?;
@@ -5352,6 +5414,8 @@ SELECT
     ms.id AS subscription_id,
     ms.plan_id AS plan_storage_id,
     ms.owner_user_id,
+    ms.organization_id AS organization_scope,
+    ms.organization_binding_status,
     ms.status,
     CAST(ms.starts_at AS TEXT) AS starts_at,
     CAST(ms.expires_at AS TEXT) AS expires_at,
@@ -5366,8 +5430,44 @@ LEFT JOIN membership_plan l ON l.id = ms.plan_id
 WHERE ms.tenant_id = CAST($1 AS TEXT)
   AND ms.subject_type = 'organization'
   AND ms.subject_id = CAST($2 AS TEXT)
+  AND ms.organization_binding_status = 'bound'
   AND ms.status IN ('pending_activation', 'active', 'grace_period')
 ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
+LIMIT 1
+"#;
+
+/// The buyer's newest team subscription that has not been bound to an
+/// organization yet.
+///
+/// An unbound team subscription is created by a paid team order that carried no
+/// organization (`organization_subject_id` absent, empty, or `0`). It keeps
+/// `subject_type = 'organization'` with an **empty** `subject_id`, so it never
+/// matches an organization-scoped seat read, and it is resolved by
+/// `owner_user_id` instead.
+const LOAD_UNBOUND_TEAM_SUBSCRIPTION_ROW: &str = r#"
+SELECT
+    ms.id AS subscription_id,
+    ms.plan_id AS plan_storage_id,
+    ms.owner_user_id,
+    ms.organization_id AS organization_scope,
+    ms.organization_binding_status,
+    ms.status,
+    CAST(ms.starts_at AS TEXT) AS starts_at,
+    CAST(ms.expires_at AS TEXT) AS expires_at,
+    CAST(COALESCE(ms.seats_purchased, 1) AS INTEGER) AS seats_purchased,
+    CAST(COALESCE(ms.seats_used, 0) AS INTEGER) AS seats_used,
+    ms.seat_policy,
+    CAST(COALESCE(ms.auto_assign_seat, 1) AS INTEGER) AS auto_assign_seat,
+    l.name AS plan_name,
+    CAST(COALESCE(l.rank, 0) AS INTEGER) AS plan_rank
+FROM membership_subscription ms
+LEFT JOIN membership_plan l ON l.id = ms.plan_id
+WHERE ms.tenant_id = CAST($1 AS TEXT)
+  AND ms.owner_user_id = CAST($2 AS TEXT)
+  AND ms.subject_type = 'organization'
+  AND ms.organization_binding_status = 'unbound'
+  AND ms.status IN ('pending_activation', 'active', 'grace_period')
+ORDER BY ms.created_at DESC, ms.id DESC
 LIMIT 1
 "#;
 
@@ -5376,6 +5476,8 @@ struct TeamSubscriptionRow {
     subscription_id: String,
     plan_storage_id: String,
     owner_user_id: String,
+    /// `bound` | `unbound` organization binding lifecycle.
+    organization_binding_status: String,
     status: String,
     starts_at: Option<String>,
     expires_at: Option<String>,
@@ -5393,6 +5495,11 @@ impl TeamSubscriptionRow {
             subscription_id: string_cell(row, "subscription_id"),
             plan_storage_id: string_cell(row, "plan_storage_id"),
             owner_user_id: string_cell(row, "owner_user_id"),
+            organization_binding_status: match string_cell(row, "organization_binding_status").as_str()
+            {
+                "unbound" => "unbound".to_owned(),
+                _ => "bound".to_owned(),
+            },
             status: string_cell(row, "status"),
             starts_at: optional_string_cell(row, "starts_at"),
             expires_at: optional_string_cell(row, "expires_at"),
@@ -5407,6 +5514,15 @@ impl TeamSubscriptionRow {
             plan_rank: integer_cell(row, "plan_rank"),
         }
     }
+}
+
+/// True when the scope names a real IAM team organization.
+///
+/// The platform organization (`0`) and the empty string are not a team scope:
+/// a session in either resolves the caller's unbound subscription instead.
+fn is_team_organization_scope(organization_id: &str) -> bool {
+    let organization_id = organization_id.trim();
+    !organization_id.is_empty() && organization_id != "0"
 }
 
 /// Ask IAM whether the caller may manage this organization's team seats.
@@ -5459,17 +5575,37 @@ where
     Ok(row.as_ref().map(TeamSubscriptionRow::from_row))
 }
 
+async fn load_unbound_team_subscription_row<'e, E>(
+    executor: E,
+    tenant_id: &str,
+    owner_user_id: &str,
+) -> AppMembershipResult<Option<TeamSubscriptionRow>>
+where
+    E: sqlx::Executor<'e, Database = Postgres>,
+{
+    let row = sqlx::query(LOAD_UNBOUND_TEAM_SUBSCRIPTION_ROW)
+        .bind(tenant_id)
+        .bind(owner_user_id)
+        .fetch_optional(executor)
+        .await
+        .map_err(|error| store_error("failed to load unbound team subscription", error))?;
+    Ok(row.as_ref().map(TeamSubscriptionRow::from_row))
+}
+
 /// Compose the team subscription overview from membership-owned rows only.
 ///
 /// Organization identity, the viewer's role, and member license counts are IAM
 /// facts: they are never read or projected here. The caller composes them from
 /// the IAM app SDK roster.
+///
+/// `organization_id` is the id the overview reports: the session's organization
+/// for a bound subscription, and the empty string for an unbound one.
 async fn compose_team_subscription_overview(
-    scope: &AppMembershipTeamScope,
+    organization_id: &str,
     subscription: Option<&TeamSubscriptionRow>,
 ) -> AppMembershipResult<TeamSubscriptionOverview> {
     let mut overview = TeamSubscriptionOverview {
-        organization_id: scope.organization_id.clone(),
+        organization_id: organization_id.to_owned(),
         has_subscription: subscription.is_some(),
         seats_purchased: 0,
         seats_used: 0,
@@ -5493,18 +5629,233 @@ async fn compose_team_subscription_overview(
         overview.seats_available = (subscription.seats_purchased - subscription.seats_used).max(0);
         overview.seat_policy = subscription.seat_policy.clone();
         overview.auto_assign_seat = subscription.auto_assign_seat;
+        overview.organization_binding_status =
+            Some(subscription.organization_binding_status.clone());
     }
     Ok(overview)
 }
 
+/// Load the team subscription overview for the session's organization scope.
+///
+/// A real team organization resolves that organization's bound subscription. A
+/// platform/personal session (empty or `0` organization) resolves the caller's
+/// newest unbound subscription, so a team purchase made before any organization
+/// existed is still visible to its buyer. Neither case is an error: an empty
+/// overview is a normal answer.
 async fn load_team_subscription(
     pool: &PgPool,
     query: TeamSubscriptionQuery,
 ) -> AppMembershipResult<TeamSubscriptionOverview> {
+    let scope = &query.scope;
+    if is_team_organization_scope(&scope.organization_id) {
+        let organization_id = scope.organization_id.trim();
+        let subscription =
+            load_team_subscription_row(pool, &scope.tenant_id, organization_id).await?;
+        return compose_team_subscription_overview(organization_id, subscription.as_ref()).await;
+    }
     let subscription =
-        load_team_subscription_row(pool, &query.scope.tenant_id, &query.scope.organization_id)
-            .await?;
-    compose_team_subscription_overview(&query.scope, subscription.as_ref()).await
+        load_unbound_team_subscription_row(pool, &scope.tenant_id, &scope.user_id).await?;
+    // An unbound subscription has no organization yet, so the overview reports
+    // an empty organizationId instead of the stored platform scope.
+    compose_team_subscription_overview("", subscription.as_ref()).await
+}
+
+/// Reject organization-scoped seat management from a session without one.
+///
+/// Two distinct answers, because the surface renders them differently:
+///
+/// - the caller owns an unbound team subscription → `team_subscription_unbound`:
+///   the purchase exists, but seats cannot be licensed until it is bound;
+/// - the caller owns no team subscription at all → `organization_scope_required`,
+///   today's answer for a platform-scoped session.
+///
+/// A real team organization always passes.
+async fn ensure_bound_team_scope(
+    pool: &PgPool,
+    scope: &AppMembershipTeamScope,
+) -> AppMembershipResult<()> {
+    if is_team_organization_scope(&scope.organization_id) {
+        return Ok(());
+    }
+    if load_unbound_team_subscription_row(pool, &scope.tenant_id, &scope.user_id)
+        .await?
+        .is_some()
+    {
+        return Err(CommerceServiceError::conflict(
+            "team_subscription_unbound: bind an organization to the team subscription before managing seats",
+        ));
+    }
+    Err(CommerceServiceError::unauthorized(
+        "organization_scope_required: team seat operations require an organization-scoped session",
+    ))
+}
+
+/// Bind the caller's unbound team subscription to an IAM organization.
+///
+/// Authorization is IAM-owned: the caller must hold
+/// `organization_capability::TEAM_SEAT_MANAGE` in the target organization, which
+/// implies an active membership there. Membership never reads IAM roles.
+///
+/// The bind is transactional and idempotent for the same organization: a second
+/// call with the same target returns the same bound overview without writing a
+/// second audit row. An organization that already licenses another team
+/// subscription is a `409 team_organization_already_subscribed`; the one-unbound
+/// -per-owner rule is enforced at purchase time, so binding consumes exactly one
+/// purchase.
+async fn bind_team_subscription(
+    pool: &PgPool,
+    organization_directory: &dyn IamOrganizationDirectory,
+    command: BindTeamSubscriptionCommand,
+) -> AppMembershipResult<TeamSubscriptionOverview> {
+    let scope = command.scope;
+    let organization_id = scope.organization_id.trim().to_owned();
+    if !is_team_organization_scope(&organization_id) {
+        return Err(CommerceServiceError::validation(
+            "membership team organization id must name an organization",
+        ));
+    }
+    authorize_team_seat_management(organization_directory, &scope).await?;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|error| store_error("failed to begin team organization bind transaction", error))?;
+    // Owner-scoped advisory lock: two concurrent binds of the same buyer's
+    // unbound purchase serialize instead of creating two bound subscriptions.
+    let lock_key = stable_membership_i64_id(&format!(
+        "membership-team-organization-bind:{}:{}",
+        scope.tenant_id, scope.user_id
+    ));
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(lock_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| store_error("failed to lock team organization bind", error))?;
+
+    if let Some(bound) =
+        load_team_subscription_row(&mut *tx, &scope.tenant_id, &organization_id).await?
+    {
+        // Idempotent: the caller's own subscription is already bound here.
+        if bound.owner_user_id == scope.user_id {
+            tx.rollback().await.map_err(|error| {
+                store_error(
+                    "failed to rollback idempotent team organization bind transaction",
+                    error,
+                )
+            })?;
+            return compose_team_subscription_overview(&organization_id, Some(&bound)).await;
+        }
+        return Err(CommerceServiceError::conflict(
+            "team_organization_already_subscribed: the organization already has an active team subscription",
+        ));
+    }
+
+    // An organization may license exactly one team subscription at a time.
+    let organization_subscribed: bool = sqlx::query_scalar(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM membership_subscription ms
+            WHERE ms.tenant_id = CAST($1 AS TEXT)
+              AND ms.subject_type = 'organization'
+              AND ms.organization_binding_status = 'bound'
+              AND (ms.subject_id = CAST($2 AS TEXT) OR ms.organization_id = CAST($2 AS TEXT))
+              AND ms.status IN ('active', 'grace_period')
+        )
+        "#,
+    )
+    .bind(&scope.tenant_id)
+    .bind(&organization_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to inspect organization team subscription", error))?;
+    if organization_subscribed {
+        return Err(CommerceServiceError::conflict(
+            "team_organization_already_subscribed: the organization already has an active team subscription",
+        ));
+    }
+
+    let Some(unbound) =
+        load_unbound_team_subscription_row(&mut *tx, &scope.tenant_id, &scope.user_id).await?
+    else {
+        tx.rollback().await.map_err(|error| {
+            store_error(
+                "failed to rollback team organization bind without an unbound subscription",
+                error,
+            )
+        })?;
+        return Err(CommerceServiceError::not_found(
+            "team_subscription_not_found: the caller has no unbound team subscription to bind",
+        ));
+    };
+
+    sqlx::query(
+        r#"
+        UPDATE membership_subscription
+        SET subject_id = CAST($1 AS TEXT),
+            organization_id = CAST($1 AS TEXT),
+            organization_binding_status = 'bound',
+            bound_at = $2::timestamptz,
+            bound_by_user_id = CAST($3 AS TEXT),
+            updated_at = $2::timestamptz
+        WHERE id = $4
+          AND tenant_id = CAST($5 AS TEXT)
+          AND organization_binding_status = 'unbound'
+        "#,
+    )
+    .bind(&organization_id)
+    .bind(&command.requested_at)
+    .bind(&scope.user_id)
+    .bind(&unbound.subscription_id)
+    .bind(&scope.tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to bind team subscription to organization", error))?;
+
+    // The billing period carries the same subject projection so the admin read
+    // model and the seat ledger agree on the organization after binding.
+    sqlx::query(
+        r#"
+        UPDATE membership_period
+        SET subject_id = CAST($1 AS TEXT),
+            organization_id = CAST($1 AS TEXT),
+            updated_at = $2::timestamptz
+        WHERE subscription_id = $3
+          AND tenant_id = CAST($4 AS TEXT)
+          AND subject_type = 'organization'
+          AND subject_id = ''
+        "#,
+    )
+    .bind(&organization_id)
+    .bind(&command.requested_at)
+    .bind(&unbound.subscription_id)
+    .bind(&scope.tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to bind team subscription period", error))?;
+
+    insert_seat_change_log(
+        &mut tx,
+        &scope.tenant_id,
+        &organization_id,
+        &unbound.subscription_id,
+        &scope.user_id,
+        &scope.user_id,
+        "team_org_bind",
+        "team_org_bind",
+        serde_json::json!({
+            "organizationId": organization_id,
+            "seats": unbound.seats_purchased,
+        }),
+        &command.requested_at,
+    )
+    .await?;
+
+    let bound = load_team_subscription_row(&mut *tx, &scope.tenant_id, &organization_id).await?;
+    tx.commit().await.map_err(|error| {
+        store_error("failed to commit team organization bind transaction", error)
+    })?;
+    compose_team_subscription_overview(&organization_id, bound.as_ref()).await
 }
 
 /// Page the active seat assignments of the organization's current team
@@ -5517,6 +5868,9 @@ async fn load_team_seats(
     pool: &PgPool,
     query: TeamSeatsQuery,
 ) -> AppMembershipResult<SdkWorkPageData<TeamSeatAssignment>> {
+    // The seat ledger is organization-scoped: an unbound team subscription has
+    // no organization to page seats for.
+    ensure_bound_team_scope(pool, &query.scope).await?;
     let params = MembershipListQuery {
         page: query.page,
         page_size: query.page_size,
@@ -5530,6 +5884,7 @@ async fn load_team_seats(
         WHERE ms.tenant_id = CAST($1 AS TEXT)
           AND ms.subject_type = 'organization'
           AND ms.subject_id = CAST($2 AS TEXT)
+          AND ms.organization_binding_status = 'bound'
           AND ms.status IN ('pending_activation', 'active', 'grace_period')
         ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
         LIMIT 1
@@ -5652,6 +6007,9 @@ async fn assign_team_seat(
     command: AssignTeamSeatCommand,
 ) -> AppMembershipResult<TeamSeatAssignment> {
     let scope = command.scope;
+    // An unbound subscription cannot license seats yet; a session without any
+    // team scope keeps answering `organization_scope_required`.
+    ensure_bound_team_scope(pool, &scope).await?;
     authorize_team_seat_management(organization_directory, &scope).await?;
 
     let mut tx = pool
@@ -5666,6 +6024,7 @@ async fn assign_team_seat(
         WHERE ms.tenant_id = CAST($1 AS TEXT)
           AND ms.subject_type = 'organization'
           AND ms.subject_id = CAST($2 AS TEXT)
+          AND ms.organization_binding_status = 'bound'
           AND ms.status IN ('pending_activation', 'active', 'grace_period')
         ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
         LIMIT 1
@@ -5885,6 +6244,7 @@ async fn revoke_team_seat(
     command: RevokeTeamSeatCommand,
 ) -> AppMembershipResult<()> {
     let scope = command.scope;
+    ensure_bound_team_scope(pool, &scope).await?;
     authorize_team_seat_management(organization_directory, &scope).await?;
 
     let target_user_id = command.target_user_id.trim().to_owned();
@@ -6033,6 +6393,7 @@ async fn update_team_seat_policy(
             "team seat policy must be strict or flex_overflow",
         ));
     }
+    ensure_bound_team_scope(pool, &scope).await?;
     authorize_team_seat_management(organization_directory, &scope).await?;
 
     let mut tx = pool
@@ -6158,6 +6519,7 @@ FROM membership_subscription ms
 WHERE ms.tenant_id = CAST($1 AS TEXT)
   AND ms.subject_type = 'organization'
   AND ms.subject_id = CAST($2 AS TEXT)
+  AND ms.organization_binding_status = 'bound'
   AND ms.status IN ('active', 'grace_period')
 ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
 LIMIT 1
@@ -6206,6 +6568,7 @@ async fn reconcile_team_seats(
     command: ReconcileTeamSeatsCommand,
 ) -> AppMembershipResult<TeamSeatReconciliation> {
     let scope = command.scope;
+    ensure_bound_team_scope(pool, &scope).await?;
     authorize_team_seat_management(organization_directory, &scope).await?;
 
     let mut tx = pool.begin().await.map_err(|error| {

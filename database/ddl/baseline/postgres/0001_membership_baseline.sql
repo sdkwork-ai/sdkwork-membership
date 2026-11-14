@@ -229,6 +229,9 @@ CREATE TABLE IF NOT EXISTS membership_subscription (
     seats_used               INTEGER NOT NULL DEFAULT 0,
     seat_policy              TEXT NOT NULL DEFAULT 'strict',
     auto_assign_seat         INTEGER NOT NULL DEFAULT 1,
+    organization_binding_status TEXT NOT NULL DEFAULT 'bound',
+    bound_at                 TIMESTAMPTZ,
+    bound_by_user_id         TEXT,
     request_no               TEXT,
     idempotency_key          TEXT,
     version                  BIGINT NOT NULL DEFAULT 0,
@@ -243,6 +246,13 @@ CREATE TABLE IF NOT EXISTS membership_subscription (
         AND seats_used >= 0
         AND (seat_policy = 'flex_overflow' OR seats_used <= seats_purchased)
     ),
+    CONSTRAINT ck_membership_subscription_organization_binding_status CHECK (
+        organization_binding_status IN ('bound', 'unbound')
+    ),
+    CONSTRAINT ck_membership_subscription_unbound_subject CHECK (
+        organization_binding_status = 'bound'
+        OR (subject_type = 'organization' AND subject_id = '')
+    ),
     CONSTRAINT ck_membership_subscription_status CHECK (status IN ('pending', 'pending_activation', 'active', 'grace_period', 'expired', 'cancelled'))
 );
 
@@ -254,6 +264,12 @@ CREATE INDEX IF NOT EXISTS idx_membership_subscription_order
     ON membership_subscription (tenant_id, source_order_id);
 CREATE INDEX IF NOT EXISTS idx_membership_subscription_subject
     ON membership_subscription (tenant_id, subject_type, subject_id, category, status, expires_at DESC);
+-- Owner-scoped organization binding lookup: the buyer's unbound team
+-- subscriptions and the one-active-unbound-per-owner rule.
+CREATE INDEX IF NOT EXISTS idx_membership_subscription_owner_binding
+    ON membership_subscription (
+        tenant_id, owner_user_id, organization_binding_status, status
+    );
 
 -- Seat assignments for organization (team) subscriptions. One active seat per
 -- member and one active holder per seat number, enforced by partial unique
@@ -583,7 +599,8 @@ CREATE TABLE IF NOT EXISTS membership_change_log (
     CONSTRAINT chk_change_log_action CHECK (action IN (
         'activate', 'renew', 'upgrade', 'downgrade',
         'expire', 'cancel', 'grace', 'restore',
-        'seat_purchase', 'seat_assign', 'seat_revoke', 'seat_policy'
+        'seat_purchase', 'seat_assign', 'seat_revoke', 'seat_policy',
+        'team_org_bind'
     )),
     CONSTRAINT chk_change_log_from_status CHECK (from_status IS NULL OR from_status IN ('active', 'expired', 'cancelled', 'grace_period', 'pending')),
     CONSTRAINT chk_change_log_to_status CHECK (to_status IS NULL OR to_status IN ('active', 'expired', 'cancelled', 'grace_period', 'pending'))

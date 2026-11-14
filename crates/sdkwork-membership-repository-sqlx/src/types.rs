@@ -905,6 +905,12 @@ pub struct UpdateAdminMembershipMemberStatusCommand {
 /// for the IAM directory projection and as the team subscription `subject_id`.
 /// IAM remains the owner of organizations and memberships; membership only
 /// reads them.
+///
+/// `organization_id` is **empty** for a platform/personal session (the session
+/// runs in the platform organization `0`). Such a session is a valid reader of
+/// the team surface: it resolves the caller's unbound team subscription
+/// instead of an organization-scoped one, and it can bind that subscription to
+/// an organization through [`BindTeamSubscriptionCommand`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppMembershipTeamScope {
     pub tenant_id: String,
@@ -933,10 +939,15 @@ pub struct TeamSeatsQuery {
 ///
 /// `has_subscription=false` is a normal 200 response: the organization simply
 /// has no active/pending team subscription yet.
+///
+/// `organization_id` is empty when the answer is the caller's unbound
+/// subscription (bought before any organization was chosen); the surface then
+/// renders the "bind an organization" step instead of the seat directory.
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamSubscriptionOverview {
     /// Raw IAM organization id (never a header; resolved from the principal).
+    /// Empty on an unbound subscription.
     pub organization_id: String,
     pub has_subscription: bool,
     pub subscription_id: Option<String>,
@@ -954,6 +965,9 @@ pub struct TeamSubscriptionOverview {
     pub seats_available: i64,
     pub seat_policy: String,
     pub auto_assign_seat: bool,
+    /// Organization binding lifecycle of the reported subscription
+    /// (`bound` | `unbound`); absent when the caller has no team subscription.
+    pub organization_binding_status: Option<String>,
 }
 
 /// One active organization seat assignment.
@@ -1004,6 +1018,19 @@ pub struct UpdateTeamSeatPolicyCommand {
 /// port through `filter_active_member_ids`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReconcileTeamSeatsCommand {
+    pub scope: AppMembershipTeamScope,
+    pub requested_at: String,
+}
+
+/// Bind the caller's unbound team subscription to an IAM organization.
+///
+/// `scope.organization_id` is the **target** organization; `scope.user_id` is
+/// the caller that must hold the IAM `TEAM_SEAT_MANAGE` capability there. The
+/// subscription is resolved by `owner_user_id = scope.user_id` and
+/// `organization_binding_status = 'unbound'`, so a caller can never bind
+/// somebody else's unbound purchase.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindTeamSubscriptionCommand {
     pub scope: AppMembershipTeamScope,
     pub requested_at: String,
 }
@@ -1189,6 +1216,15 @@ pub trait AppMembershipStore {
         &'a self,
         command: ReconcileTeamSeatsCommand,
     ) -> AppMembershipReadFuture<'a, TeamSeatReconciliation>;
+
+    /// Bind the caller's unbound team subscription to an organization.
+    ///
+    /// Idempotent for a caller whose subscription is already bound to the same
+    /// organization: the current bound overview is returned unchanged.
+    fn bind_team_subscription<'a>(
+        &'a self,
+        command: BindTeamSubscriptionCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview>;
 }
 
 pub trait AdminMembershipStore {
