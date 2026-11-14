@@ -349,19 +349,21 @@ fn team_seat_authorization_is_an_iam_owned_capability_decision() {
         "the port call must name the IAM capability constant, not a literal role",
     );
 
-    // One helper plus exactly four decisions: assign, revoke, policy update,
-    // and member-removal reconciliation.
+    // One helper plus exactly five decisions: assign, revoke, policy update,
+    // member-removal reconciliation, and binding an unbound subscription to an
+    // organization (which grants the organization's seat pool to the buyer).
     assert_eq!(
-        5,
+        6,
         POSTGRES_SOURCE
             .matches("authorize_team_seat_management(")
             .count(),
-        "assign, revoke, seat-policy update, and reconcile are the only seat-management decisions",
+        "assign, revoke, seat-policy update, bind, and reconcile are the only seat-management decisions",
     );
     for call in [
         "async fn assign_team_seat(",
         "async fn revoke_team_seat(",
         "async fn update_team_seat_policy(",
+        "async fn bind_team_subscription(",
         "async fn reconcile_team_seats(",
     ] {
         let body = POSTGRES_SOURCE

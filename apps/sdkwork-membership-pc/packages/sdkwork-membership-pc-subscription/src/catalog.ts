@@ -20,6 +20,7 @@ export {
   formatSdkworkTeamCopy,
   formatTeamCnyAmount,
   groupTeamPlanPackages,
+  hasSdkworkTeamOrganizationScope,
   isSdkworkTeamSubscriptionUnbound,
   joinTeamSeatDirectory,
   loadSdkworkTeamRoster,

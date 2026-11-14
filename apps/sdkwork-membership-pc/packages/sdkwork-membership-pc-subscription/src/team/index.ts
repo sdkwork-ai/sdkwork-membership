@@ -86,6 +86,7 @@ export {
   SDKWORK_TEAM_ERROR_REASONS,
   SDKWORK_TEAM_PLATFORM_ORGANIZATION_ID,
   SdkworkTeamSubscriptionError,
+  hasSdkworkTeamOrganizationScope,
   isSdkworkTeamSubscriptionUnbound,
   loadSdkworkTeamRoster,
   loadSdkworkTeamSnapshot,

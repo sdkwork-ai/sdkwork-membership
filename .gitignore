@@ -22,6 +22,8 @@ Thumbs.db
 # Local temp scratch files (e.g. _tmp_<pid>_<hash>)
 _tmp_*
 **_tmp_*
+# Local dot-prefixed scratch output (e.g. .tmp-db-migrate.out, .tmp-dbprobe.sql)
+.tmp-*
 
 .env
 .env.*

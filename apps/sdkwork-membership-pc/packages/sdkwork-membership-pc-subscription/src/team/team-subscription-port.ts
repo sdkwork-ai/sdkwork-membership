@@ -538,6 +538,27 @@ export function isSdkworkTeamSubscriptionUnbound(
 }
 
 /**
+ * True when the overview is scoped to a real IAM team organization.
+ *
+ * A platform/personal session (empty organization id or the platform
+ * organization `0`) has no organization-scoped facts to read, so the surface
+ * must not walk the roster or page a seat ledger for it.
+ *
+ * @param overview - the membership-owned overview.
+ * @returns `true` when the organization roster and seat reads make sense.
+ */
+export function hasSdkworkTeamOrganizationScope(
+  overview: SdkworkTeamSubscriptionOverview,
+): boolean {
+  const organizationId = overview.organizationId.trim();
+  return (
+    organizationId.length > 0
+    && organizationId !== SDKWORK_TEAM_PLATFORM_ORGANIZATION_ID
+    && !isSdkworkTeamSubscriptionUnbound(overview)
+  );
+}
+
+/**
  * Loads the complete team surface state in two parallel stages.
  *
  * Stage one fetches the membership overview, the membership seat assignments,
@@ -564,17 +585,21 @@ export async function loadSdkworkTeamSnapshot(
       ? port.listOwnMemberships()
       : Promise.resolve(preloadedMemberships),
     port.listSeatAssignments(TEAM_SEAT_PAGE_SIZE * TEAM_SEAT_MAX_PAGES).catch((error: unknown) => {
-      // A platform-scoped session has no organization seat ledger yet. The
-      // unbound state is a normal answer, so an empty seat list is expected
-      // there instead of failing the whole surface.
-      if (isSdkworkTeamSubscriptionUnbound(overview)) {
+      // A session without an organization scope has no seat ledger yet: the
+      // no-org and unbound states are normal answers, so an empty seat list is
+      // expected there instead of failing the whole surface.
+      if (!hasSdkworkTeamOrganizationScope(overview)) {
         return [] as SdkworkTeamSeatAssignment[];
       }
       throw error;
     }),
   ]);
 
-  if (isSdkworkTeamSubscriptionUnbound(overview)) {
+  if (!hasSdkworkTeamOrganizationScope(overview)) {
+    // No organization scope (platform session, or a subscription bought before
+    // an organization exists): there is no roster, no seat directory, and no
+    // organization name to read. The surface renders the plan cards or the bind
+    // step from the membership facts alone.
     const organizationId = overview.organizationId.trim();
     const composition = composeTeamSeatComposition({
       membersTotal: 0,
