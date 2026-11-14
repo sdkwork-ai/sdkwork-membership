@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LoadingBlock, StatusNotice } from "@sdkwork/ui-pc-react";
 import { hasSdkworkMembershipSession } from "@sdkwork/membership-service";
@@ -18,8 +18,16 @@ import {
   type SdkworkSubscriptionCatalogCheckoutPayment,
   type SdkworkSubscriptionCatalogCheckoutPlan,
   type SdkworkSubscriptionCatalogPageProps as SdkworkSubscriptionCatalogHostPageProps,
+  type SdkworkSubscriptionCatalogTranslate,
 } from "../subscription-catalog-host";
 import type { SdkworkSubscriptionPurchaseResult } from "../subscription-service";
+import {
+  SdkworkSubscriptionAudienceTabs,
+  SdkworkTeamSubscriptionSurface,
+  SdkworkTeamSurfaceProvider,
+  type SdkworkSubscriptionAudience,
+  type SdkworkTeamSurfaceRuntime,
+} from "../team";
 
 export interface SdkworkSubscriptionCatalogPageProps extends SdkworkSubscriptionCatalogHostPageProps {
   catalogController?: SdkworkSubscriptionCatalogController;
@@ -53,6 +61,7 @@ export function SdkworkSubscriptionCatalogPage({
   onLoginRequired,
   onMembershipTierUpdated,
   onNotify,
+  team,
 }: SdkworkSubscriptionCatalogPageProps) {
   const { t } = useTranslation();
   const { copy } = useSdkworkSubscriptionIntl();
@@ -103,6 +112,34 @@ export function SdkworkSubscriptionCatalogPage({
 
   const memberSummary = memberSummaryProp ?? state.memberSummary;
   const handleLoginRequired = onLoginRequired ?? redirectToDefaultLogin;
+
+  const [audience, setAudience] = useState<SdkworkSubscriptionAudience>("personal");
+  const translateTeamCopy = useMemo<SdkworkSubscriptionCatalogTranslate>(
+    () => team?.translate ?? ((key, defaultValue) => String(t(key, defaultValue ?? key))),
+    [t, team?.translate],
+  );
+
+  /**
+   * Team surface runtime derived from the page's own props.
+   *
+   * The page owns the sign-in, notification, and payment presentation; the team
+   * surface owns the seat management and the checkout hand-off, so a host plugs
+   * the team in through one `team` prop.
+   */
+  const teamRuntime = useMemo<SdkworkTeamSurfaceRuntime | null>(
+    () => (team
+      ? {
+        checkoutModal: CheckoutModal,
+        ...(team.locale ? { locale: team.locale } : {}),
+        onLoginRequired: handleLoginRequired,
+        onNotify: handleNotify,
+        port: team.port,
+        translate: translateTeamCopy,
+      }
+      : null),
+    [CheckoutModal, handleLoginRequired, handleNotify, team, translateTeamCopy],
+  );
+  const isTeamAudience = teamRuntime !== null && audience === "team";
 
   useEffect(() => {
     if (!state.isBootstrapped && !state.isLoading) {
@@ -243,13 +280,30 @@ export function SdkworkSubscriptionCatalogPage({
         plan={state.selectedCheckoutPlan}
       />
 
-      {state.isLoading && !state.isBootstrapped ? (
+      {team ? (
+        <div className="pb-4 pt-1">
+          <SdkworkSubscriptionAudienceTabs
+            active={audience}
+            labels={team.labels}
+            onChange={setAudience}
+            translate={translateTeamCopy}
+          />
+        </div>
+      ) : null}
+
+      {isTeamAudience && teamRuntime ? (
+        <SdkworkTeamSurfaceProvider value={teamRuntime}>
+          <SdkworkTeamSubscriptionSurface />
+        </SdkworkTeamSurfaceProvider>
+      ) : null}
+
+      {!isTeamAudience && state.isLoading && !state.isBootstrapped ? (
         <div className="px-6 py-12">
           <LoadingBlock label={t("loading_catalog", "正在加载套餐信息...")} />
         </div>
       ) : null}
 
-      {state.lastError && state.catalog === null && !state.isLoading ? (
+      {!isTeamAudience && state.lastError && state.catalog === null && !state.isLoading ? (
         <div className="px-6 py-12">
           <StatusNotice title={t("load_failed", "加载失败")} tone="danger">
             {state.lastError}
@@ -268,7 +322,7 @@ export function SdkworkSubscriptionCatalogPage({
         </div>
       ) : null}
 
-      {state.isBootstrapped && state.catalog !== null ? (
+      {!isTeamAudience && state.isBootstrapped && state.catalog !== null ? (
         <>
           <SubscriptionCatalogHero
             billingCycleIndex={state.billingCycleIndex}

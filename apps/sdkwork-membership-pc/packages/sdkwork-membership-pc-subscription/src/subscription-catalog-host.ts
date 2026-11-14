@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import type { SdkworkSubscriptionPurchaseResult } from "./subscription-service";
 import type { SdkworkMembershipCheckoutPort } from "@sdkwork/membership-pc-membership";
+import type { SdkworkSubscriptionCatalogTeamProps } from "./subscription-catalog-team";
 
 export { SDKWORK_SUBSCRIPTION_CATALOG_UNAVAILABLE_TIER_KEY } from "./subscription-catalog-content";
 
@@ -18,6 +19,13 @@ export interface SdkworkSubscriptionCatalogCheckoutPlan {
   packageNumericId: number;
   packagePeriodLabel: string;
   priceLabel: string;
+  /**
+   * Audience that selected this plan.
+   *
+   * `team` plans are priced per seat and are paid through the same order-owned
+   * checkout; the host dialog presents the payment and never re-prices it.
+   */
+  audience?: "personal" | "team";
 }
 
 export interface SdkworkSubscriptionCatalogCheckoutPayment {
@@ -61,6 +69,14 @@ export interface SdkworkSubscriptionCatalogPageProps {
   onLoginRequired?: () => void;
   onMembershipTierUpdated?: (membershipTierKey: string, durationDays: number) => void;
   onNotify?: (message: string, tone: "error" | "info" | "success") => void;
+  /**
+   * Optional organization (team) capability.
+   *
+   * When present the page renders the audience switch above the personal hero
+   * and the team seat surface when the team audience is selected; when absent
+   * the page stays personal-only.
+   */
+  team?: SdkworkSubscriptionCatalogTeamProps;
 }
 
 export type SdkworkSubscriptionCatalogTranslate = (

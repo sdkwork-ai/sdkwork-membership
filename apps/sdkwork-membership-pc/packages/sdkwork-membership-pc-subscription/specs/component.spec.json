@@ -160,6 +160,10 @@
         "export": "./catalog"
       },
       {
+        "name": "teamSubscriptionPort",
+        "export": "./catalog"
+      },
+      {
         "name": "subscriptionI18n",
         "export": "./i18n"
       }
@@ -210,6 +214,6 @@
   "metadata": {
     "managedBy": "apps/scripts/initialize-component-specs.mjs",
     "standardVersion": "2026-05-13",
-    "boundary": "Catalog UI delegates checkout through the host-injected membership checkout port and has no order or payment package dependency."
+    "boundary": "Catalog UI delegates checkout through the host-injected membership checkout port and has no order or payment package dependency. The optional team surface (audience switch, seat directory, seat policy, team plan cards) owns no transport either: membership-, IAM-, and order-owned facts reach it through the host-injected SdkworkTeamSubscriptionPort, so every host renders one team surface."
   }
 }
