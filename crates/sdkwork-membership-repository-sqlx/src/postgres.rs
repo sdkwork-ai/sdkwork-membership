@@ -1,10 +1,10 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 
 use sdkwork_contract_service::CommerceServiceError;
 use sdkwork_iam_directory_repository_sqlx::{
-    IamDirectoryError, IamOrganizationDirectory, IamOrganizationMemberQuery,
-    IamOrganizationMemberRecord, IamOrganizationRecord, SqlxIamOrganizationDirectory,
+    organization_capability, IamDirectoryError, IamOrganizationDirectory,
+    SqlxIamOrganizationDirectory,
 };
 use sdkwork_utils_rust::{SdkWorkCommandData, SdkWorkPageData};
 use sqlx::{PgPool, Postgres, Row, Transaction};
@@ -17,7 +17,7 @@ use crate::pagination::{
 use crate::read_model::is_missing_postgres_read_model;
 use crate::shared::{
     build_package_group_from_packages, current_timestamp_string, decimal_string,
-    map_membership_package_record, paid_membership_purchase_submit_command,
+    escape_like_pattern, map_membership_package_record, paid_membership_purchase_submit_command,
     parse_coupon_subscription_quota_policy, parse_points_amount, plan_code_from_rank,
     plan_rank_from_code, privilege_usage_from_benefits, resolve_catalog_scope,
     resolve_membership_purchase_binding, stable_membership_i64_id, subscription_quota_day_bounds,
@@ -27,33 +27,34 @@ use crate::shared::{
     DEFAULT_CATALOG_TENANT_ID, POINTS_ASSET_CODE, POINTS_CURRENCY_CODE,
 };
 use crate::{
-    is_valid_membership_seat_policy, membership_role_can_manage_seats,
-    AdminMembershipEntitlementItem, AdminMembershipFuture, AdminMembershipMemberItem,
-    AdminMembershipPackageGroupItem, AdminMembershipPackageItem, AdminMembershipPlanItem,
-    AdminMembershipStore, AppMembershipBenefitItem, AppMembershipCommandFuture,
-    AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse,
-    AppMembershipInfoResponse, AppMembershipListQuery, AppMembershipPackageGroupItem,
-    AppMembershipPackageItem, AppMembershipPlanItem, AppMembershipPointsBalanceResponse,
-    AppMembershipPointsHistoryItem, AppMembershipPointsHistoryQuery,
-    AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipReadFuture,
-    AppMembershipResult, AppMembershipStatusResponse, AppMembershipStore, AppMembershipSubject,
-    AppMembershipTeamScope, AssignTeamSeatCommand, ConsumeSubscriptionQuotaCommand,
-    CouponSubscriptionFulfillmentOutcome, CreateAdminMembershipPackageCommand,
-    CreateAdminMembershipPackageGroupCommand, CreateAdminMembershipPlanCommand,
-    DeleteAdminMembershipPackageCommand, DeleteAdminMembershipPackageGroupCommand,
-    DeleteAdminMembershipPlanCommand, FeatureAccessCheckOutcome, FeatureAccessCheckQuery,
-    FulfillMembershipPurchaseCommand, FulfillMembershipPurchaseOutcome,
-    FulfillPaidMembershipPurchaseCommand, GrantCouponSubscriptionCommand,
-    ListAdminMembershipEntitlementsQuery, ListAdminMembershipMembersQuery,
-    ListAdminMembershipPackageGroupsQuery, ListAdminMembershipPackagesQuery,
-    ListAdminMembershipPlansQuery, MembershipLifecycleSweepOutcome,
-    RechargeSubscriptionQuotaCommand, RetrieveAdminMembershipMemberQuery, RevokeTeamSeatCommand,
-    SubmitMembershipPurchaseCommand, SubscriptionQuotaConsumptionOutcome,
-    SubscriptionQuotaRechargeFuture, SubscriptionQuotaRechargeOutcome, TeamSeatAssignmentItem,
-    TeamSeatMember, TeamSeatsQuery, TeamSubscriptionOverview, TeamSubscriptionQuery,
-    UpdateAdminMembershipMemberStatusCommand, UpdateAdminMembershipPackageCommand,
-    UpdateAdminMembershipPackageGroupCommand, UpdateAdminMembershipPlanCommand,
-    UpdateTeamSeatPolicyCommand,
+    is_valid_membership_seat_policy, AdminMembershipEntitlementItem, AdminMembershipFuture,
+    AdminMembershipMemberItem, AdminMembershipPackageGroupItem, AdminMembershipPackageItem,
+    AdminMembershipPlanItem, AdminMembershipStore, AdminTeamSubscriptionItem,
+    AppMembershipBenefitItem, AppMembershipCommandFuture, AppMembershipDailyRewardResponse,
+    AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipListQuery,
+    AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPlanItem,
+    AppMembershipPointsBalanceResponse, AppMembershipPointsHistoryItem,
+    AppMembershipPointsHistoryQuery, AppMembershipPrivilegeUsageResponse,
+    AppMembershipPurchaseOutcome, AppMembershipReadFuture, AppMembershipResult,
+    AppMembershipStatusResponse, AppMembershipStore, AppMembershipSubject, AppMembershipTeamScope,
+    AssignTeamSeatCommand, ConsumeSubscriptionQuotaCommand, CouponSubscriptionFulfillmentOutcome,
+    CreateAdminMembershipPackageCommand, CreateAdminMembershipPackageGroupCommand,
+    CreateAdminMembershipPlanCommand, DeleteAdminMembershipPackageCommand,
+    DeleteAdminMembershipPackageGroupCommand, DeleteAdminMembershipPlanCommand,
+    FeatureAccessCheckOutcome, FeatureAccessCheckQuery, FulfillMembershipPurchaseCommand,
+    FulfillMembershipPurchaseOutcome, FulfillPaidMembershipPurchaseCommand,
+    GrantCouponSubscriptionCommand, ListAdminMembershipEntitlementsQuery,
+    ListAdminMembershipMembersQuery, ListAdminMembershipPackageGroupsQuery,
+    ListAdminMembershipPackagesQuery, ListAdminMembershipPlansQuery,
+    ListAdminTeamSubscriptionsQuery, MembershipLifecycleSweepOutcome,
+    RechargeSubscriptionQuotaCommand, ReconcileTeamSeatsCommand,
+    RetrieveAdminMembershipMemberQuery, RevokeTeamSeatCommand, SubmitMembershipPurchaseCommand,
+    SubscriptionQuotaConsumptionOutcome, SubscriptionQuotaRechargeFuture,
+    SubscriptionQuotaRechargeOutcome, TeamSeatAssignment, TeamSeatReconciliation, TeamSeatsQuery,
+    TeamSubscriptionOverview, TeamSubscriptionQuery, UpdateAdminMembershipMemberStatusCommand,
+    UpdateAdminMembershipPackageCommand, UpdateAdminMembershipPackageGroupCommand,
+    UpdateAdminMembershipPlanCommand, UpdateTeamSeatPolicyCommand,
+    MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS,
 };
 
 const LOAD_MEMBERSHIP_PACKAGES_BASE: &str = r#"
@@ -737,24 +738,20 @@ impl AppMembershipStore for PostgresCommerceMembershipStore {
         &'a self,
         query: TeamSubscriptionQuery,
     ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview> {
-        Box::pin(async move {
-            load_team_subscription(&self.pool, self.organization_directory.as_ref(), query).await
-        })
+        Box::pin(async move { load_team_subscription(&self.pool, query).await })
     }
 
     fn load_team_seats<'a>(
         &'a self,
         query: TeamSeatsQuery,
-    ) -> AppMembershipReadFuture<'a, SdkWorkPageData<TeamSeatMember>> {
-        Box::pin(async move {
-            load_team_seats(&self.pool, self.organization_directory.as_ref(), query).await
-        })
+    ) -> AppMembershipReadFuture<'a, SdkWorkPageData<TeamSeatAssignment>> {
+        Box::pin(async move { load_team_seats(&self.pool, query).await })
     }
 
     fn assign_team_seat<'a>(
         &'a self,
         command: AssignTeamSeatCommand,
-    ) -> AppMembershipReadFuture<'a, TeamSeatAssignmentItem> {
+    ) -> AppMembershipReadFuture<'a, TeamSeatAssignment> {
         Box::pin(async move {
             assign_team_seat(&self.pool, self.organization_directory.as_ref(), command).await
         })
@@ -775,6 +772,15 @@ impl AppMembershipStore for PostgresCommerceMembershipStore {
     ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview> {
         Box::pin(async move {
             update_team_seat_policy(&self.pool, self.organization_directory.as_ref(), command).await
+        })
+    }
+
+    fn reconcile_team_seats<'a>(
+        &'a self,
+        command: ReconcileTeamSeatsCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSeatReconciliation> {
+        Box::pin(async move {
+            reconcile_team_seats(&self.pool, self.organization_directory.as_ref(), command).await
         })
     }
 }
@@ -890,6 +896,13 @@ impl AdminMembershipStore for PostgresCommerceMembershipStore {
         query: ListAdminMembershipEntitlementsQuery,
     ) -> AdminMembershipFuture<'a, SdkWorkPageData<AdminMembershipEntitlementItem>> {
         Box::pin(async move { list_admin_membership_entitlements(&self.pool, query).await })
+    }
+
+    fn list_admin_team_subscriptions<'a>(
+        &'a self,
+        query: ListAdminTeamSubscriptionsQuery,
+    ) -> AdminMembershipFuture<'a, SdkWorkPageData<AdminTeamSubscriptionItem>> {
+        Box::pin(async move { list_admin_team_subscriptions(&self.pool, query).await })
     }
 }
 
@@ -1816,6 +1829,143 @@ async fn list_admin_membership_entitlements(
         total,
         params,
     ))
+}
+
+/// Admin/ops read model for organization (team) subscriptions.
+///
+/// Projects membership-owned facts only. The organization identity is the
+/// subscription `subject_id` (the IAM organization id licensed by the plan);
+/// IAM profiles, organization roles, and member rows are never read here.
+///
+/// The tenant/subject-type/subject-id/category/status predicate is served by
+/// `idx_membership_subscription_subject` (migration `0004_membership_team_seats`),
+/// so the organization filter and the tenant scope stay index-backed. `q` is a
+/// free-text match over the subscription id, organization id, and plan name; the
+/// term is LIKE-escaped so `%` / `_` match literally.
+async fn list_admin_team_subscriptions(
+    pool: &PgPool,
+    query: ListAdminTeamSubscriptionsQuery,
+) -> AppMembershipResult<SdkWorkPageData<AdminTeamSubscriptionItem>> {
+    let params = MembershipListQuery {
+        page: query.page,
+        page_size: query.page_size,
+        cursor: query.cursor.clone(),
+        category: None,
+        audience: None,
+    }
+    .offset_params();
+    let tenant_id = tenant_id_text(query.subject.tenant_id);
+    let plan_id = query.plan_id.as_deref();
+    let organization_id = query.organization_id.as_deref();
+    let status = query.status.as_deref();
+    let search_pattern = query
+        .q
+        .as_deref()
+        .map(|value| format!("%{}%", escape_like_pattern(value)));
+
+    let total: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM membership_subscription ms
+        LEFT JOIN membership_plan l ON l.id = ms.plan_id
+        WHERE ms.tenant_id = CAST($1 AS TEXT)
+          AND ms.category = 'token'
+          AND ms.subject_type = 'organization'
+          AND ($2 IS NULL OR ms.status = $2)
+          AND ($3 IS NULL OR ms.plan_id = $3 OR l.plan_no = $3)
+          AND ($4 IS NULL OR ms.subject_id = CAST($4 AS TEXT))
+          AND (
+            $5 IS NULL
+            OR ms.id ILIKE $5 ESCAPE '\'
+            OR ms.subject_id ILIKE $5 ESCAPE '\'
+            OR COALESCE(l.name, '') ILIKE $5 ESCAPE '\'
+          )
+        "#,
+    )
+    .bind(&tenant_id)
+    .bind(status)
+    .bind(plan_id)
+    .bind(organization_id)
+    .bind(search_pattern.as_deref())
+    .fetch_one(pool)
+    .await
+    .map_err(sql_error)?;
+
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            ms.id AS subscription_id,
+            ms.subject_id AS organization_id,
+            ms.plan_id AS plan_id,
+            l.name AS plan_name,
+            ms.status,
+            CAST(ms.starts_at AS TEXT) AS starts_at,
+            CAST(ms.expires_at AS TEXT) AS expires_at,
+            CAST(COALESCE(ms.seats_purchased, 1) AS INTEGER) AS seats_purchased,
+            CAST(COALESCE(ms.seats_used, 0) AS INTEGER) AS seats_used,
+            ms.seat_policy,
+            CAST(COALESCE(ms.auto_assign_seat, 1) AS INTEGER) AS auto_assign_seat,
+            ms.owner_user_id,
+            CAST(ms.created_at AS TEXT) AS created_at,
+            CAST(ms.updated_at AS TEXT) AS updated_at
+        FROM membership_subscription ms
+        LEFT JOIN membership_plan l ON l.id = ms.plan_id
+        WHERE ms.tenant_id = CAST($1 AS TEXT)
+          AND ms.category = 'token'
+          AND ms.subject_type = 'organization'
+          AND ($2 IS NULL OR ms.status = $2)
+          AND ($3 IS NULL OR ms.plan_id = $3 OR l.plan_no = $3)
+          AND ($4 IS NULL OR ms.subject_id = CAST($4 AS TEXT))
+          AND (
+            $5 IS NULL
+            OR ms.id ILIKE $5 ESCAPE '\'
+            OR ms.subject_id ILIKE $5 ESCAPE '\'
+            OR COALESCE(l.name, '') ILIKE $5 ESCAPE '\'
+          )
+        ORDER BY ms.created_at DESC, ms.id DESC
+        LIMIT $6 OFFSET $7
+        "#,
+    )
+    .bind(&tenant_id)
+    .bind(status)
+    .bind(plan_id)
+    .bind(organization_id)
+    .bind(search_pattern.as_deref())
+    .bind(params.page_size)
+    .bind(params.offset)
+    .fetch_all(pool)
+    .await
+    .map_err(sql_error)?;
+
+    let items = rows
+        .iter()
+        .map(|row| {
+            let seats_purchased = integer_cell(row, "seats_purchased").max(1);
+            let seats_used = integer_cell(row, "seats_used").max(0);
+            AdminTeamSubscriptionItem {
+                subscription_id: string_cell(row, "subscription_id"),
+                organization_id: string_cell(row, "organization_id"),
+                plan_id: string_cell(row, "plan_id"),
+                plan_name: optional_string_cell(row, "plan_name")
+                    .filter(|value| !value.trim().is_empty()),
+                status: string_cell(row, "status"),
+                starts_at: string_cell(row, "starts_at"),
+                expires_at: string_cell(row, "expires_at"),
+                seats_purchased,
+                seats_used,
+                seats_available: (seats_purchased - seats_used).max(0),
+                seat_policy: match string_cell(row, "seat_policy").as_str() {
+                    "flex_overflow" => "flex_overflow".to_owned(),
+                    _ => "strict".to_owned(),
+                },
+                auto_assign_seat: integer_cell(row, "auto_assign_seat") != 0,
+                owner_user_id: string_cell(row, "owner_user_id"),
+                created_at: string_cell(row, "created_at"),
+                updated_at: string_cell(row, "updated_at"),
+            }
+        })
+        .collect();
+    Ok(offset_page(items, total, params))
 }
 
 async fn load_admin_membership_plan(
@@ -3720,6 +3870,15 @@ async fn fulfill_paid_purchase_by_order(
     pool: &PgPool,
     command: FulfillPaidMembershipPurchaseCommand,
 ) -> AppMembershipResult<FulfillMembershipPurchaseOutcome> {
+    // 席位扩容（`add_seats`）在"新建/续费/升级订阅"路径之前分流：它只把追加的
+    // 席位并入买方组织当前有效的组织订阅，绝不新建订阅或周期，也不延长有效期。
+    if command
+        .action
+        .trim()
+        .eq_ignore_ascii_case(MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS)
+    {
+        return add_purchased_seats_by_order(pool, command).await;
+    }
     let purchase = paid_membership_purchase_submit_command(&command)?;
     let fulfillment = FulfillMembershipPurchaseCommand {
         subject: command.subject,
@@ -3785,6 +3944,318 @@ async fn fulfill_paid_purchase_by_order(
         )
     })?;
     Ok(outcome)
+}
+
+/// 已支付订单的席位扩容结果。
+#[derive(Debug, Clone)]
+struct PaidSeatExpansion {
+    /// 要追加的席位数（不是扩容后的席位总数）。
+    seats: i64,
+    /// 组织订阅的 `subject_id`（IAM 组织主体原始字符串）。
+    organization_subject_id: String,
+    /// 审计行 `reason`：带订单号，用于同一订单的重放识别。
+    ///
+    /// `metadata` 保持契约要求的 `{"seats":N,"mode":"add_seats"}` 形状，因此订单
+    /// 身份放在 `reason` 而不是 metadata 里。
+    audit_reason: String,
+}
+
+/// 校验收到的扩容命令并挑出组织主体。
+fn validate_paid_seat_expansion_command(
+    command: &FulfillPaidMembershipPurchaseCommand,
+) -> AppMembershipResult<PaidSeatExpansion> {
+    if command.subject.tenant_id <= 0 || command.subject.user_id <= 0 {
+        return Err(CommerceServiceError::validation(
+            "membership seat expansion subject identifiers are invalid",
+        ));
+    }
+    if command.package_id <= 0 {
+        return Err(CommerceServiceError::validation(
+            "membership seat expansion package id must be greater than zero",
+        ));
+    }
+    for (value, name) in [
+        (&command.order_id, "order id"),
+        (&command.order_no, "order number"),
+        (&command.request_no, "request number"),
+        (&command.idempotency_key, "idempotency key"),
+    ] {
+        if value.trim().is_empty() {
+            return Err(CommerceServiceError::validation(format!(
+                "membership seat expansion {name} is required"
+            )));
+        }
+    }
+    if command.seats < 1 {
+        return Err(CommerceServiceError::validation(
+            "membership seat expansion seat quantity must be at least one",
+        ));
+    }
+    let order_id = command.order_id.trim();
+    let organization_subject_id = command
+        .organization_subject_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && *value != "0")
+        .map(str::to_owned)
+        .unwrap_or_else(|| command.subject.organization_id.to_string());
+    if organization_subject_id == "0" {
+        return Err(CommerceServiceError::conflict(
+            "team_subscription_inactive: seat expansion requires an organization scope",
+        ));
+    }
+    Ok(PaidSeatExpansion {
+        seats: command.seats,
+        organization_subject_id,
+        audit_reason: format!("seat_purchase:order:{order_id}"),
+    })
+}
+
+/// 席位扩容（`action = "add_seats"`）的已支付履约。
+///
+/// 语义：把订单追加的席位数并入买方组织当前有效（`active` | `grace_period`）的
+/// 组织订阅——`membership_subscription.seats_purchased += seats`。绝不新建订阅或
+/// 周期，不改 `starts_at` / `expires_at` / `current_period_id`，也不改
+/// `seats_used`；只写一条 `seat_purchase` 审计（metadata
+/// `{"seats":N,"mode":"add_seats"}`）。同一订单号重放返回相同结果且绝不重复累加。
+async fn add_purchased_seats_by_order(
+    pool: &PgPool,
+    command: FulfillPaidMembershipPurchaseCommand,
+) -> AppMembershipResult<FulfillMembershipPurchaseOutcome> {
+    let expansion = validate_paid_seat_expansion_command(&command)?;
+    let applied_at = current_timestamp_string();
+    let mut tx = pool.begin().await.map_err(|error| {
+        store_error(
+            "failed to begin membership seat expansion transaction",
+            error,
+        )
+    })?;
+    // 与"按订单新建/续费"共用同一把主体级 advisory 事务锁：同一买方主体的已支付
+    // 履约互斥，并发扩容与并发续费不会交错。
+    let lock_key = stable_membership_i64_id(&format!(
+        "membership-paid-fulfillment:{}:{}:{}",
+        command.subject.tenant_id, command.subject.organization_id, command.subject.user_id
+    ));
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(lock_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| store_error("failed to lock membership seat expansion", error))?;
+
+    if seat_expansion_already_applied(&mut tx, command.subject.tenant_id, &expansion.audit_reason)
+        .await?
+    {
+        tx.rollback().await.map_err(|error| {
+            store_error(
+                "failed to rollback replayed membership seat expansion transaction",
+                error,
+            )
+        })?;
+        return Ok(FulfillMembershipPurchaseOutcome {
+            accepted: true,
+            replayed: true,
+            fulfillment_status: "active".to_owned(),
+        });
+    }
+
+    let package = load_package_for_purchase(
+        &mut tx,
+        command.subject.tenant_id,
+        command.subject.organization_id,
+        command.package_id,
+    )
+    .await?;
+    let plan = load_plan_for_package(&mut tx, &package).await?;
+    if plan.audience != "team" {
+        return Err(CommerceServiceError::conflict(
+            "seat_expansion_personal_plan: seat expansion requires an organization (team) plan",
+        ));
+    }
+    let plan_storage_id = plan_id_for_storage(&plan);
+    let subscription = load_seat_expansion_subscription(
+        &mut tx,
+        command.subject.tenant_id,
+        &expansion.organization_subject_id,
+        &plan_storage_id,
+        &package.storage_id,
+    )
+    .await?;
+
+    let updated = sqlx::query(
+        r#"
+        UPDATE membership_subscription
+        SET seats_purchased = seats_purchased + $1,
+            version = version + 1,
+            updated_at = CAST($2 AS TIMESTAMPTZ)
+        WHERE id = $3
+          AND tenant_id = CAST($4 AS TEXT)
+          AND subject_type = 'organization'
+          AND status IN ('active', 'grace_period')
+        "#,
+    )
+    .bind(expansion.seats)
+    .bind(&applied_at)
+    .bind(&subscription.subscription_id)
+    .bind(command.subject.tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to expand membership subscription seats", error))?;
+    if updated.rows_affected() != 1 {
+        return Err(CommerceServiceError::conflict(
+            "team_subscription_inactive: team subscription is no longer eligible for seat expansion",
+        ));
+    }
+
+    insert_seat_expansion_change_log(
+        &mut tx,
+        &command,
+        &expansion,
+        &subscription.subscription_id,
+        &applied_at,
+    )
+    .await?;
+
+    tx.commit().await.map_err(|error| {
+        store_error(
+            "failed to commit membership seat expansion transaction",
+            error,
+        )
+    })?;
+    Ok(FulfillMembershipPurchaseOutcome {
+        accepted: true,
+        replayed: false,
+        fulfillment_status: "active".to_owned(),
+    })
+}
+
+#[derive(Debug, Clone)]
+struct SeatExpansionSubscription {
+    subscription_id: String,
+}
+
+/// 定位买方组织在 `(tenant, subject_id=组织, plan_id)` 上的有效组织订阅。
+///
+/// 只接受 `active` | `grace_period` 的组织订阅，并且要求订单套餐属于该订阅的
+/// 当前计划族（`plan_id` 相同，或套餐存储 id 与订阅当前套餐一致）；否则按冲突
+/// 拒绝，绝不会把席位扩到别的计划上。
+async fn load_seat_expansion_subscription(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: i64,
+    organization_subject_id: &str,
+    plan_storage_id: &str,
+    package_storage_id: &str,
+) -> AppMembershipResult<SeatExpansionSubscription> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            ms.id AS subscription_id,
+            ms.plan_id AS plan_storage_id,
+            COALESCE(ms.package_id, '') AS package_storage_id,
+            CAST(COALESCE(ms.seats_purchased, 1) AS INTEGER) AS seats_purchased
+        FROM membership_subscription ms
+        WHERE ms.tenant_id = CAST($1 AS TEXT)
+          AND ms.subject_type = 'organization'
+          AND ms.subject_id = CAST($2 AS TEXT)
+          AND ms.status IN ('active', 'grace_period')
+        ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
+        LIMIT 1
+        FOR UPDATE
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(organization_subject_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| {
+        store_error(
+            "failed to load organization subscription for seat expansion",
+            error,
+        )
+    })?
+    .ok_or_else(|| {
+        CommerceServiceError::conflict(
+            "team_subscription_inactive: organization has no active team subscription",
+        )
+    })?;
+
+    let subscription_plan_id = string_cell(&row, "plan_storage_id");
+    let subscription_package_id = string_cell(&row, "package_storage_id");
+    if subscription_plan_id != plan_storage_id && subscription_package_id != package_storage_id {
+        return Err(CommerceServiceError::conflict(
+            "seat_expansion_plan_mismatch: the package is not the organization's active team plan",
+        ));
+    }
+
+    Ok(SeatExpansionSubscription {
+        subscription_id: string_cell(&row, "subscription_id"),
+    })
+}
+
+/// 同一订单的扩容审计是否已经写入（幂等重放判据）。
+async fn seat_expansion_already_applied(
+    tx: &mut Transaction<'_, Postgres>,
+    tenant_id: i64,
+    audit_reason: &str,
+) -> AppMembershipResult<bool> {
+    sqlx::query_scalar::<_, bool>(
+        r#"
+        SELECT EXISTS(
+            SELECT 1
+            FROM membership_change_log
+            WHERE tenant_id = CAST($1 AS TEXT)
+              AND action = 'seat_purchase'
+              AND reason = $2
+              AND COALESCE(metadata ->> 'mode', '') = $3
+        )
+        "#,
+    )
+    .bind(tenant_id)
+    .bind(audit_reason)
+    .bind(MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|error| store_error("failed to inspect membership seat expansion replay", error))
+}
+
+/// 写席位扩容审计行：`seat_purchase` + `{"seats":N,"mode":"add_seats"}`。
+async fn insert_seat_expansion_change_log(
+    tx: &mut Transaction<'_, Postgres>,
+    command: &FulfillPaidMembershipPurchaseCommand,
+    expansion: &PaidSeatExpansion,
+    subscription_id: &str,
+    created_at: &str,
+) -> AppMembershipResult<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO membership_change_log
+            (id, uuid, tenant_id, organization_id, subscription_id, user_id, action,
+             from_status, to_status, from_plan_id, operator_id, operator_type, reason,
+             metadata, created_at)
+        VALUES
+            ($1, $2, $3, $4, $5, $6, 'seat_purchase', NULL, NULL, NULL,
+             $7, 'user', $8, $9::JSONB, CAST($10 AS TIMESTAMPTZ))
+        "#,
+    )
+    .bind(sdkwork_utils_rust::uuid())
+    .bind(sdkwork_utils_rust::uuid())
+    .bind(command.subject.tenant_id.to_string())
+    .bind(command.subject.organization_id.to_string())
+    .bind(subscription_id)
+    .bind(command.subject.user_id.to_string())
+    .bind(command.subject.user_id.to_string())
+    .bind(&expansion.audit_reason)
+    .bind(
+        serde_json::json!({
+            "seats": expansion.seats,
+            "mode": MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS,
+        })
+        .to_string(),
+    )
+    .bind(created_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| store_error("failed to insert membership seat expansion audit", error))?;
+    Ok(())
 }
 
 async fn fulfill_purchase_by_order(
@@ -4860,6 +5331,12 @@ async fn insert_membership_change_log(
 // The only SQL left in this section is membership-owned
 // (`membership_subscription`, `membership_seat_assignment`,
 // `membership_change_log`). IAM table names do not appear in this module.
+//
+// Seat authorization is an IAM decision as well. Assign, revoke, and seat-policy
+// update ask the port `authorize_organization_action` for the IAM capability
+// `organization_capability::TEAM_SEAT_MANAGE`. Membership carries no role
+// vocabulary and never re-derives which organization role may manage seats: a
+// denial is IAM's `false`, surfaced as `seat_management_forbidden`.
 
 /// Map an IAM directory failure onto the membership storage error kind.
 ///
@@ -4932,22 +5409,37 @@ impl TeamSubscriptionRow {
     }
 }
 
-/// Read the viewer's organization role (`membership_kind`) through the port.
+/// Ask IAM whether the caller may manage this organization's team seats.
 ///
-/// IAM owns the role assignment; membership only reads it.
-async fn load_viewer_role(
+/// The authorization policy is IAM-owned: membership names the IAM capability
+/// (`organization_capability::TEAM_SEAT_MANAGE`) and never inspects the caller's
+/// IAM organization role (`DOMAIN_SPEC.md` §5, `MODULE_SPEC.md` §4.2.1). IAM
+/// applies its own role matrix and reports the decision as a bool; a non-member
+/// or a plain member is a denial, not a port error.
+async fn authorize_team_seat_management(
     organization_directory: &dyn IamOrganizationDirectory,
-    tenant_id: &str,
-    organization_id: &str,
-    user_id: &str,
-) -> AppMembershipResult<Option<String>> {
-    let member = organization_directory
-        .load_active_member(tenant_id, organization_id, user_id)
+    scope: &AppMembershipTeamScope,
+) -> AppMembershipResult<()> {
+    let allowed = organization_directory
+        .authorize_organization_action(
+            &scope.tenant_id,
+            &scope.organization_id,
+            &scope.user_id,
+            organization_capability::TEAM_SEAT_MANAGE,
+        )
         .await
         .map_err(|error| {
-            directory_error("failed to read the organization role of the caller", error)
+            directory_error(
+                "failed to authorize organization team seat management",
+                error,
+            )
         })?;
-    Ok(member.map(|value| value.membership_kind.trim().to_ascii_lowercase()))
+    if !allowed {
+        return Err(CommerceServiceError::unauthorized(
+            "seat_management_forbidden: IAM denied the team seat management capability to the caller",
+        ));
+    }
+    Ok(())
 }
 
 async fn load_team_subscription_row<'e, E>(
@@ -4967,179 +5459,23 @@ where
     Ok(row.as_ref().map(TeamSubscriptionRow::from_row))
 }
 
-fn require_team_seat_management(role: Option<&str>) -> AppMembershipResult<()> {
-    let allowed = role.map(membership_role_can_manage_seats).unwrap_or(false);
-    if !allowed {
-        return Err(CommerceServiceError::unauthorized(
-            "seat_management_forbidden: organization owner or admin role is required to manage seats",
-        ));
-    }
-    Ok(())
-}
-
-/// One active seat assignment row owned by the membership domain.
-#[derive(Debug, Clone)]
-struct ActiveSeatRow {
-    seat_no: i64,
-    assigned_at: Option<String>,
-}
-
-/// Active user ids holding a seat on one subscription (membership-owned table).
-async fn load_active_seat_user_ids(
-    pool: &PgPool,
-    tenant_id: &str,
-    organization_id: &str,
-    subscription_id: &str,
-) -> AppMembershipResult<Vec<String>> {
-    let rows = sqlx::query(
-        r#"
-        SELECT DISTINCT user_id
-        FROM membership_seat_assignment
-        WHERE tenant_id = CAST($1 AS TEXT)
-          AND organization_id = CAST($2 AS TEXT)
-          AND subscription_id = $3
-          AND state = 'active'
-        "#,
-    )
-    .bind(tenant_id)
-    .bind(organization_id)
-    .bind(subscription_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|error| store_error("failed to load licensed seat members", error))?;
-    Ok(rows.iter().map(|row| string_cell(row, "user_id")).collect())
-}
-
-/// One membership-owned query for the seat state of exactly one directory page.
+/// Compose the team subscription overview from membership-owned rows only.
 ///
-/// `= ANY($4)` keeps the read set-based (no per-member round trip); the caller
-/// only passes the user ids the IAM directory returned for the page.
-async fn load_active_seat_rows(
-    pool: &PgPool,
-    tenant_id: &str,
-    organization_id: &str,
-    subscription_id: Option<&str>,
-    user_ids: &[String],
-) -> AppMembershipResult<BTreeMap<String, ActiveSeatRow>> {
-    let Some(subscription_id) = subscription_id.filter(|value| !value.trim().is_empty()) else {
-        return Ok(BTreeMap::new());
-    };
-    if user_ids.is_empty() {
-        return Ok(BTreeMap::new());
-    }
-    let rows = sqlx::query(
-        r#"
-        SELECT
-            user_id,
-            CAST(seat_no AS INTEGER) AS seat_no,
-            CAST(assigned_at AS TEXT) AS assigned_at
-        FROM membership_seat_assignment
-        WHERE tenant_id = CAST($1 AS TEXT)
-          AND organization_id = CAST($2 AS TEXT)
-          AND subscription_id = $3
-          AND state = 'active'
-          AND user_id = ANY(CAST($4 AS TEXT[]))
-        ORDER BY seat_no ASC
-        "#,
-    )
-    .bind(tenant_id)
-    .bind(organization_id)
-    .bind(subscription_id)
-    .bind(user_ids.to_vec())
-    .fetch_all(pool)
-    .await
-    .map_err(|error| {
-        store_error(
-            "failed to load seat assignments for the seat directory",
-            error,
-        )
-    })?;
-    let mut seats = BTreeMap::new();
-    for row in rows.iter() {
-        let user_id = string_cell(row, "user_id");
-        if seats.contains_key(&user_id) {
-            continue;
-        }
-        seats.insert(
-            user_id,
-            ActiveSeatRow {
-                seat_no: integer_cell(row, "seat_no"),
-                assigned_at: optional_string_cell(row, "assigned_at"),
-            },
-        );
-    }
-    Ok(seats)
-}
-
-/// Compose the team subscription overview (IAM organization directory + viewer
-/// role + optional team subscription + member license counts).
+/// Organization identity, the viewer's role, and member license counts are IAM
+/// facts: they are never read or projected here. The caller composes them from
+/// the IAM app SDK roster.
 async fn compose_team_subscription_overview(
-    pool: &PgPool,
-    organization_directory: &dyn IamOrganizationDirectory,
     scope: &AppMembershipTeamScope,
-    organization: Option<&IamOrganizationRecord>,
-    viewer_role: Option<String>,
     subscription: Option<&TeamSubscriptionRow>,
 ) -> AppMembershipResult<TeamSubscriptionOverview> {
-    let members_total = organization_directory
-        .count_active_members(&scope.tenant_id, &scope.organization_id)
-        .await
-        .map_err(|error| directory_error("failed to count active organization members", error))?;
-    let licensed_members = match subscription {
-        Some(subscription) => {
-            let seat_user_ids = load_active_seat_user_ids(
-                pool,
-                &scope.tenant_id,
-                &scope.organization_id,
-                &subscription.subscription_id,
-            )
-            .await?;
-            if seat_user_ids.is_empty() {
-                0
-            } else {
-                let active_user_ids = organization_directory
-                    .filter_active_member_ids(
-                        &scope.tenant_id,
-                        &scope.organization_id,
-                        &seat_user_ids,
-                    )
-                    .await
-                    .map_err(|error| {
-                        directory_error("failed to filter licensed organization members", error)
-                    })?;
-                i64::try_from(active_user_ids.len()).unwrap_or(i64::MAX)
-            }
-        }
-        None => 0,
-    };
-    let can_manage_seats = viewer_role
-        .as_deref()
-        .map(membership_role_can_manage_seats)
-        .unwrap_or(false);
-
     let mut overview = TeamSubscriptionOverview {
         organization_id: scope.organization_id.clone(),
-        organization_name: organization.map(|value| {
-            if value.name.trim().is_empty() {
-                value.code.clone()
-            } else {
-                value.name.clone()
-            }
-        }),
-        organization_kind: organization.map(|value| value.organization_kind.clone()),
-        viewer_role,
-        can_manage_seats,
         has_subscription: subscription.is_some(),
         seats_purchased: 0,
         seats_used: 0,
         seats_available: 0,
         seat_policy: "strict".to_owned(),
         auto_assign_seat: true,
-        members_total,
-        licensed_members,
-        unlicensed_members: (members_total - licensed_members).max(0),
-        over_seat: false,
-        over_seat_count: 0,
         ..TeamSubscriptionOverview::default()
     };
 
@@ -5157,59 +5493,36 @@ async fn compose_team_subscription_overview(
         overview.seats_available = (subscription.seats_purchased - subscription.seats_used).max(0);
         overview.seat_policy = subscription.seat_policy.clone();
         overview.auto_assign_seat = subscription.auto_assign_seat;
-        overview.over_seat_count = (subscription.seats_used - subscription.seats_purchased).max(0);
-        overview.over_seat = overview.over_seat_count > 0;
     }
     Ok(overview)
 }
 
 async fn load_team_subscription(
     pool: &PgPool,
-    organization_directory: &dyn IamOrganizationDirectory,
     query: TeamSubscriptionQuery,
 ) -> AppMembershipResult<TeamSubscriptionOverview> {
-    let organization = organization_directory
-        .load_organization(&query.scope.tenant_id, &query.scope.organization_id)
-        .await
-        .map_err(|error| directory_error("failed to load the organization directory row", error))?;
-    let viewer_role = load_viewer_role(
-        organization_directory,
-        &query.scope.tenant_id,
-        &query.scope.organization_id,
-        &query.scope.user_id,
-    )
-    .await?;
     let subscription =
         load_team_subscription_row(pool, &query.scope.tenant_id, &query.scope.organization_id)
             .await?;
-    compose_team_subscription_overview(
-        pool,
-        organization_directory,
-        &query.scope,
-        organization.as_ref(),
-        viewer_role,
-        subscription.as_ref(),
-    )
-    .await
+    compose_team_subscription_overview(&query.scope, subscription.as_ref()).await
 }
 
+/// Page the active seat assignments of the organization's current team
+/// subscription.
+///
+/// Only membership-owned assignment facts are projected. The organization
+/// roster (member identity, role, contact data) is IAM-owned and is composed by
+/// the caller through the IAM app SDK.
 async fn load_team_seats(
     pool: &PgPool,
-    organization_directory: &dyn IamOrganizationDirectory,
     query: TeamSeatsQuery,
-) -> AppMembershipResult<SdkWorkPageData<TeamSeatMember>> {
+) -> AppMembershipResult<SdkWorkPageData<TeamSeatAssignment>> {
     let params = MembershipListQuery {
         page: query.page,
         page_size: query.page_size,
         ..Default::default()
     }
     .offset_params();
-    let search = query
-        .q
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
     let subscription_id: Option<String> = sqlx::query_scalar(
         r#"
         SELECT ms.id
@@ -5226,63 +5539,65 @@ async fn load_team_seats(
     .bind(&query.scope.organization_id)
     .fetch_optional(pool)
     .await
-    .map_err(|error| store_error("failed to load team subscription for seat directory", error))?;
-
-    // The IAM directory owns the member page: search escaping, active-status
-    // filtering, and deterministic ordering live behind the port. Membership
-    // only pages and counts through it.
-    let members: Vec<IamOrganizationMemberRecord> = organization_directory
-        .list_active_members(
-            &query.scope.tenant_id,
-            &query.scope.organization_id,
-            IamOrganizationMemberQuery {
-                q: search.clone(),
-                offset: params.offset,
-                limit: params.page_size,
-            },
+    .map_err(|error| {
+        store_error(
+            "failed to load team subscription for seat assignments",
+            error,
         )
-        .await
-        .map_err(|error| {
-            directory_error("failed to load the organization seat directory", error)
-        })?;
-    let total = organization_directory
-        .count_active_members_matching(&query.scope.tenant_id, &query.scope.organization_id, search)
-        .await
-        .map_err(|error| directory_error("failed to count organization seat members", error))?;
+    })?;
+    let Some(subscription_id) = subscription_id else {
+        return Ok(offset_page(Vec::new(), 0, params));
+    };
 
-    // One membership-owned seat query for exactly this page of user ids.
-    let page_user_ids = members
-        .iter()
-        .map(|member| member.user_id.clone())
-        .collect::<Vec<_>>();
-    let seats = load_active_seat_rows(
-        pool,
-        &query.scope.tenant_id,
-        &query.scope.organization_id,
-        subscription_id.as_deref(),
-        &page_user_ids,
+    let total: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*)
+        FROM membership_seat_assignment
+        WHERE tenant_id = CAST($1 AS TEXT)
+          AND organization_id = CAST($2 AS TEXT)
+          AND subscription_id = $3
+          AND state = 'active'
+        "#,
     )
-    .await?;
+    .bind(&query.scope.tenant_id)
+    .bind(&query.scope.organization_id)
+    .bind(&subscription_id)
+    .fetch_one(pool)
+    .await
+    .map_err(|error| store_error("failed to count team seat assignments", error))?;
 
-    let items = members
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            CAST(user_id AS TEXT) AS user_id,
+            CAST(membership_id AS TEXT) AS membership_id,
+            CAST(seat_no AS BIGINT) AS seat_no,
+            CAST(assigned_at AS TEXT) AS assigned_at
+        FROM membership_seat_assignment
+        WHERE tenant_id = CAST($1 AS TEXT)
+          AND organization_id = CAST($2 AS TEXT)
+          AND subscription_id = $3
+          AND state = 'active'
+        ORDER BY seat_no ASC, id ASC
+        LIMIT $4 OFFSET $5
+        "#,
+    )
+    .bind(&query.scope.tenant_id)
+    .bind(&query.scope.organization_id)
+    .bind(&subscription_id)
+    .bind(params.page_size)
+    .bind(params.offset)
+    .fetch_all(pool)
+    .await
+    .map_err(|error| store_error("failed to load team seat assignments", error))?;
+
+    let items = rows
         .iter()
-        .map(|member| {
-            let seat = seats.get(&member.user_id);
-            TeamSeatMember {
-                user_id: member.user_id.clone(),
-                membership_id: member.membership_id.clone(),
-                display_name: member.display_name.clone(),
-                email: member.email.clone(),
-                membership_kind: member.membership_kind.trim().to_ascii_lowercase(),
-                member_status: Some(member.status.clone()),
-                seat_state: if seat.is_some() {
-                    "active".to_owned()
-                } else {
-                    "unassigned".to_owned()
-                },
-                seat_no: seat.map(|value| value.seat_no),
-                assigned_at: seat.and_then(|value| value.assigned_at.clone()),
-            }
+        .map(|row| TeamSeatAssignment {
+            user_id: string_cell(row, "user_id"),
+            membership_id: optional_string_cell(row, "membership_id"),
+            seat_no: integer_cell(row, "seat_no"),
+            assigned_at: optional_string_cell(row, "assigned_at").unwrap_or_default(),
         })
         .collect::<Vec<_>>();
     Ok(offset_page(items, total, params))
@@ -5335,16 +5650,9 @@ async fn assign_team_seat(
     pool: &PgPool,
     organization_directory: &dyn IamOrganizationDirectory,
     command: AssignTeamSeatCommand,
-) -> AppMembershipResult<TeamSeatAssignmentItem> {
+) -> AppMembershipResult<TeamSeatAssignment> {
     let scope = command.scope;
-    let viewer_role = load_viewer_role(
-        organization_directory,
-        &scope.tenant_id,
-        &scope.organization_id,
-        &scope.user_id,
-    )
-    .await?;
-    require_team_seat_management(viewer_role.as_deref())?;
+    authorize_team_seat_management(organization_directory, &scope).await?;
 
     let mut tx = pool
         .begin()
@@ -5563,12 +5871,11 @@ async fn assign_team_seat(
         .await
         .map_err(|error| store_error("failed to commit team seat assignment", error))?;
 
-    Ok(TeamSeatAssignmentItem {
+    Ok(TeamSeatAssignment {
         user_id: member.user_id,
+        membership_id: Some(member.membership_id),
         seat_no,
         assigned_at: command.requested_at,
-        display_name: member.display_name,
-        membership_id: Some(member.membership_id),
     })
 }
 
@@ -5578,14 +5885,7 @@ async fn revoke_team_seat(
     command: RevokeTeamSeatCommand,
 ) -> AppMembershipResult<()> {
     let scope = command.scope;
-    let viewer_role = load_viewer_role(
-        organization_directory,
-        &scope.tenant_id,
-        &scope.organization_id,
-        &scope.user_id,
-    )
-    .await?;
-    require_team_seat_management(viewer_role.as_deref())?;
+    authorize_team_seat_management(organization_directory, &scope).await?;
 
     let target_user_id = command.target_user_id.trim().to_owned();
     if target_user_id.is_empty() {
@@ -5733,14 +6033,7 @@ async fn update_team_seat_policy(
             "team seat policy must be strict or flex_overflow",
         ));
     }
-    let viewer_role = load_viewer_role(
-        organization_directory,
-        &scope.tenant_id,
-        &scope.organization_id,
-        &scope.user_id,
-    )
-    .await?;
-    require_team_seat_management(viewer_role.as_deref())?;
+    authorize_team_seat_management(organization_directory, &scope).await?;
 
     let mut tx = pool
         .begin()
@@ -5839,7 +6132,6 @@ async fn update_team_seat_policy(
 
     load_team_subscription(
         pool,
-        organization_directory,
         TeamSubscriptionQuery {
             scope: AppMembershipTeamScope {
                 tenant_id: scope.tenant_id,
@@ -5849,6 +6141,260 @@ async fn update_team_seat_policy(
         },
     )
     .await
+}
+
+/// Locates the team subscription a reconciliation sweep may run against.
+///
+/// Only an `active` or `grace_period` subscription is reconcilable: a
+/// `pending_activation` subscription has not started, so a member-removal sweep
+/// must report `team_subscription_inactive` instead of revoking seat rows for a
+/// subscription that never became effective.
+const LOAD_RECONCILABLE_TEAM_SUBSCRIPTION_ROW: &str = r#"
+SELECT
+    ms.id AS subscription_id,
+    CAST(COALESCE(ms.seats_purchased, 1) AS INTEGER) AS seats_purchased,
+    CAST(COALESCE(ms.seats_used, 0) AS INTEGER) AS seats_used
+FROM membership_subscription ms
+WHERE ms.tenant_id = CAST($1 AS TEXT)
+  AND ms.subject_type = 'organization'
+  AND ms.subject_id = CAST($2 AS TEXT)
+  AND ms.status IN ('active', 'grace_period')
+ORDER BY ms.expires_at DESC, ms.created_at DESC, ms.id DESC
+LIMIT 1
+"#;
+
+/// Active assignment `(assignment id, user id)` pairs whose user IAM no longer
+/// reports as an active organization member.
+///
+/// Pure selection step of the member-removal sweep: it never reads a table and
+/// never calls IAM, so the idempotency rule is directly unit-testable — when
+/// every assigned user is still active the answer is empty, which is why a
+/// repeat sweep revokes nothing.
+fn departed_seat_assignments(
+    assignments: &[(String, String)],
+    active_member_ids: &[String],
+) -> Vec<(String, String)> {
+    let active: HashSet<&str> = active_member_ids.iter().map(String::as_str).collect();
+    assignments
+        .iter()
+        .filter(|(_, user_id)| !active.contains(user_id.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Revokes every active seat assignment whose user IAM no longer reports as an
+/// active organization member.
+///
+/// IAM owns organization membership, so the "still a member?" decision is one
+/// set-based port call (`filter_active_member_ids`), never a per-seat membership
+/// probe and never an IAM table read. The whole sweep runs in one transaction
+/// serialized by the per-subscription advisory xact lock (the same key the
+/// assign/revoke/policy paths use), so a concurrent assign cannot slip a
+/// departed member back into the ledger:
+///
+/// - every stale assignment becomes `state = 'revoked'`,
+///   `revoked_reason = 'member_removed'`, `revoke_actor_user_id = caller`;
+/// - `seats_used` is decremented by the revoked count and never below zero;
+/// - one `membership_change_log` `seat_revoke` row is written per assignment
+///   with `{"reason":"member_removed","userId":...}` metadata.
+///
+/// A second call finds no stale assignment, writes nothing, and returns
+/// `revoked_count = 0`: the endpoint is idempotent.
+async fn reconcile_team_seats(
+    pool: &PgPool,
+    organization_directory: &dyn IamOrganizationDirectory,
+    command: ReconcileTeamSeatsCommand,
+) -> AppMembershipResult<TeamSeatReconciliation> {
+    let scope = command.scope;
+    authorize_team_seat_management(organization_directory, &scope).await?;
+
+    let mut tx = pool.begin().await.map_err(|error| {
+        store_error(
+            "failed to begin team seat reconciliation transaction",
+            error,
+        )
+    })?;
+
+    let subscription = sqlx::query(LOAD_RECONCILABLE_TEAM_SUBSCRIPTION_ROW)
+        .bind(&scope.tenant_id)
+        .bind(&scope.organization_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|error| {
+            store_error(
+                "failed to load team subscription for seat reconciliation",
+                error,
+            )
+        })?;
+    let Some(subscription) = subscription else {
+        return Err(CommerceServiceError::conflict(
+            "team_subscription_inactive: organization has no active team subscription",
+        ));
+    };
+    let subscription_id = string_cell(&subscription, "subscription_id");
+
+    // Same advisory key as assign/revoke/policy so one subscription's seat
+    // mutations never interleave.
+    let lock_key = stable_membership_i64_id(&format!("membership-team-seat:{subscription_id}"));
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(lock_key)
+        .execute(&mut *tx)
+        .await
+        .map_err(|error| store_error("failed to lock team seat reconciliation", error))?;
+
+    let assignment_rows = sqlx::query(
+        r#"
+        SELECT CAST(id AS TEXT) AS id,
+               CAST(user_id AS TEXT) AS user_id
+        FROM membership_seat_assignment
+        WHERE tenant_id = CAST($1 AS TEXT)
+          AND subscription_id = $2
+          AND state = 'active'
+        ORDER BY seat_no ASC, id ASC
+        "#,
+    )
+    .bind(&scope.tenant_id)
+    .bind(&subscription_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to load active seat assignments", error))?;
+
+    let mut assignments: Vec<(String, String)> = Vec::with_capacity(assignment_rows.len());
+    for row in &assignment_rows {
+        let user_id = string_cell(row, "user_id");
+        if !user_id.is_empty() {
+            assignments.push((string_cell(row, "id"), user_id));
+        }
+    }
+
+    // One set-based IAM directory query decides membership. An empty ledger or
+    // an empty answer revokes nothing (the port short-circuits an empty input).
+    let assigned_user_ids: Vec<String> = assignments
+        .iter()
+        .map(|(_, user_id)| user_id.clone())
+        .collect();
+    let active_member_ids = organization_directory
+        .filter_active_member_ids(&scope.tenant_id, &scope.organization_id, &assigned_user_ids)
+        .await
+        .map_err(|error| {
+            directory_error(
+                "failed to filter active organization member ids for seat reconciliation",
+                error,
+            )
+        })?;
+
+    let stale = departed_seat_assignments(&assignments, &active_member_ids);
+
+    if stale.is_empty() {
+        // Nothing to revoke: report the counters as they stand AFTER the
+        // advisory lock, so a concurrent add-seats/assign transaction is not
+        // reported from a stale pre-lock snapshot.
+        let counters = sqlx::query(
+            r#"
+            SELECT CAST(COALESCE(seats_used, 0) AS INTEGER) AS seats_used,
+                   CAST(COALESCE(seats_purchased, 1) AS INTEGER) AS seats_purchased
+            FROM membership_subscription
+            WHERE id = $1
+              AND tenant_id = CAST($2 AS TEXT)
+            "#,
+        )
+        .bind(&subscription_id)
+        .bind(&scope.tenant_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|error| store_error("failed to read team seat counters", error))?;
+        let seats_used = integer_cell(&counters, "seats_used").max(0);
+        let seats_purchased = integer_cell(&counters, "seats_purchased").max(1);
+        tx.commit()
+            .await
+            .map_err(|error| store_error("failed to close team seat reconciliation", error))?;
+        return Ok(TeamSeatReconciliation {
+            revoked_count: 0,
+            seats_used,
+            seats_purchased,
+        });
+    }
+
+    let stale_assignment_ids: Vec<String> = stale
+        .iter()
+        .map(|(assignment_id, _)| assignment_id.clone())
+        .collect();
+    sqlx::query(
+        r#"
+        UPDATE membership_seat_assignment
+        SET state = 'revoked',
+            revoked_at = CAST($1 AS TIMESTAMPTZ),
+            revoked_reason = 'member_removed',
+            revoke_actor_user_id = CAST($2 AS TEXT),
+            version = version + 1,
+            updated_at = CAST($1 AS TIMESTAMPTZ)
+        WHERE tenant_id = CAST($3 AS TEXT)
+          AND subscription_id = $4
+          AND state = 'active'
+          AND CAST(id AS TEXT) = ANY(CAST($5 AS TEXT[]))
+        "#,
+    )
+    .bind(&command.requested_at)
+    .bind(&scope.user_id)
+    .bind(&scope.tenant_id)
+    .bind(&subscription_id)
+    .bind(stale_assignment_ids)
+    .execute(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to revoke departed member seat assignments", error))?;
+
+    // One audit row per revoked assignment, each carrying the removed user id.
+    for (_, user_id) in &stale {
+        insert_seat_change_log(
+            &mut tx,
+            &scope.tenant_id,
+            &scope.organization_id,
+            &subscription_id,
+            user_id,
+            &scope.user_id,
+            "seat_revoke",
+            "seat_revoke",
+            serde_json::json!({ "reason": "member_removed", "userId": user_id }),
+            &command.requested_at,
+        )
+        .await?;
+    }
+
+    let revoked_count = stale.len() as i64;
+    // `seats_used` is INT4; bind the decrement in its own width instead of
+    // relying on an implicit narrowing cast.
+    let seat_decrement = i32::try_from(stale.len()).unwrap_or(i32::MAX);
+    let counters = sqlx::query(
+        r#"
+        UPDATE membership_subscription
+        SET seats_used = GREATEST(seats_used - $1, 0),
+            version = version + 1,
+            updated_at = CAST($2 AS TIMESTAMPTZ)
+        WHERE id = $3
+          AND tenant_id = CAST($4 AS TEXT)
+        RETURNING CAST(seats_used AS INTEGER) AS seats_used,
+                  CAST(COALESCE(seats_purchased, 1) AS INTEGER) AS seats_purchased
+        "#,
+    )
+    .bind(seat_decrement)
+    .bind(&command.requested_at)
+    .bind(&subscription_id)
+    .bind(&scope.tenant_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|error| store_error("failed to decrement team seats used", error))?;
+    let seats_used = integer_cell(&counters, "seats_used").max(0);
+    let seats_purchased = integer_cell(&counters, "seats_purchased").max(1);
+
+    tx.commit()
+        .await
+        .map_err(|error| store_error("failed to commit team seat reconciliation", error))?;
+
+    Ok(TeamSeatReconciliation {
+        revoked_count,
+        seats_used,
+        seats_purchased,
+    })
 }
 
 /// 权益额度消耗限额解析：coupon 政策按日/总双限；plan 发放与订阅期充值发放按
@@ -7218,5 +7764,156 @@ mod tests {
         assert!(source.contains("fn membership_expired"));
         assert!(source.contains("!membership_expired(&item.expires_at)"));
         assert!(source.contains("item.rank > 0"));
+    }
+
+    fn paid_seat_expansion_command(
+        seats: i64,
+        organization_subject_id: Option<&str>,
+        organization_id: i64,
+    ) -> FulfillPaidMembershipPurchaseCommand {
+        FulfillPaidMembershipPurchaseCommand {
+            subject: AppMembershipSubject {
+                tenant_id: 100001,
+                organization_id,
+                user_id: 42,
+            },
+            package_id: 21,
+            order_id: "order-1".to_owned(),
+            membership_id: "membership-order-1".to_owned(),
+            order_no: "MB1".to_owned(),
+            request_no: "REQUEST1".to_owned(),
+            idempotency_key: "membership-purchase:fulfill:order-1".to_owned(),
+            paid_at: "2026-07-26T00:30:00Z".to_owned(),
+            action: MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS.to_owned(),
+            seats,
+            organization_subject_id: organization_subject_id.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn seat_expansion_command_reads_the_added_seats_and_the_order_identity() {
+        let expansion =
+            validate_paid_seat_expansion_command(&paid_seat_expansion_command(5, Some("org-1"), 0))
+                .expect("valid seat expansion command");
+
+        // `seats` is the number of seats to ADD, and the audit reason carries the
+        // order id so a replayed order is recognised without changing the
+        // contract metadata shape.
+        assert_eq!(expansion.seats, 5);
+        assert_eq!(expansion.organization_subject_id, "org-1");
+        assert_eq!(expansion.audit_reason, "seat_purchase:order:order-1");
+
+        // The raw organization subject wins; the numeric scope is the fallback.
+        let numeric =
+            validate_paid_seat_expansion_command(&paid_seat_expansion_command(1, None, 77))
+                .expect("numeric organization scope");
+        assert_eq!(numeric.organization_subject_id, "77");
+    }
+
+    #[test]
+    fn seat_expansion_command_rejects_non_positive_seats_and_personal_scope() {
+        for seats in [0, -1] {
+            assert!(
+                validate_paid_seat_expansion_command(&paid_seat_expansion_command(
+                    seats,
+                    Some("org-1"),
+                    0,
+                ))
+                .is_err(),
+                "add_seats must reject a seat quantity of {seats}"
+            );
+        }
+        // No organization subject at all: seat expansion cannot target a
+        // personal subscription.
+        let personal =
+            validate_paid_seat_expansion_command(&paid_seat_expansion_command(3, None, 0));
+        let error = personal.expect_err("personal scope must be rejected");
+        assert_eq!(
+            *error.kind(),
+            sdkwork_contract_service::CommerceServiceErrorKind::Conflict
+        );
+        assert!(error
+            .message()
+            .contains("team_subscription_inactive: seat expansion requires an organization scope"));
+    }
+
+    #[test]
+    fn seat_expansion_increment_keeps_the_period_and_writes_the_contract_audit() {
+        let source = include_str!("postgres.rs");
+
+        // Branching happens before the new-subscription path so `renew` and
+        // `purchase` stay untouched.
+        let branch = source
+            .find("eq_ignore_ascii_case(MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS)")
+            .expect("add_seats branch");
+        let subscription_path = source
+            .find("let purchase = paid_membership_purchase_submit_command(&command)?;")
+            .expect("new-subscription fulfilment path");
+        assert!(branch < subscription_path);
+
+        // The increment only grows `seats_purchased`; the period, the current
+        // period id and `seats_used` are never rewritten.
+        assert!(source.contains("SET seats_purchased = seats_purchased + $1,"));
+        let increment = source
+            .find("SET seats_purchased = seats_purchased + $1,")
+            .expect("seat increment");
+        let update_tail = &source[increment..(increment + 500).min(source.len())];
+        assert!(!update_tail.contains("starts_at"));
+        assert!(!update_tail.contains("expires_at ="));
+        assert!(!update_tail.contains("current_period_id"));
+        assert!(!update_tail.contains("seats_used"));
+
+        // Only active/grace-period organization subscriptions are expanded.
+        assert!(source.contains("AND subject_type = 'organization'"));
+        assert!(source.contains("AND status IN ('active', 'grace_period')"));
+        // Plan/package compatibility is verified before the increment.
+        assert!(source.contains(
+            "subscription_plan_id != plan_storage_id && subscription_package_id != package_storage_id"
+        ));
+        // The audit row is `seat_purchase` with the contract metadata.
+        assert!(source.contains("'seat_purchase', NULL, NULL, NULL,"));
+        assert!(source.contains("\"mode\": MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS"));
+        // Replay never double-adds: the audit reason is checked before the update.
+        let replay_guard = source
+            .find("seat_expansion_already_applied(")
+            .expect("seat expansion replay guard");
+        assert!(replay_guard < increment);
+        assert!(source.contains("if updated.rows_affected() != 1 {"));
+    }
+
+    fn seat(row_id: &str, user_id: &str) -> (String, String) {
+        (row_id.to_owned(), user_id.to_owned())
+    }
+
+    #[test]
+    fn departed_seat_selector_keeps_only_users_iam_no_longer_reports() {
+        let assignments = vec![seat("a1", "u-1"), seat("a2", "u-2"), seat("a3", "u-3")];
+        // u-2 left the organization: exactly one assignment is stale.
+        let active = vec!["u-1".to_owned(), "u-3".to_owned()];
+        assert_eq!(
+            departed_seat_assignments(&assignments, &active),
+            vec![seat("a2", "u-2")],
+        );
+    }
+
+    #[test]
+    fn departed_seat_selector_is_empty_when_every_member_is_active() {
+        let assignments = vec![seat("a1", "u-1"), seat("a2", "u-2")];
+        let active = vec!["u-1".to_owned(), "u-2".to_owned()];
+        // This is the idempotent second sweep: nothing is stale, so the caller
+        // writes no revocation and answers `revokedCount = 0`.
+        assert!(departed_seat_assignments(&assignments, &active).is_empty());
+    }
+
+    #[test]
+    fn departed_seat_selector_revokes_everything_when_iam_reports_no_members() {
+        let assignments = vec![seat("a1", "u-1"), seat("a2", "u-2")];
+        assert_eq!(
+            departed_seat_assignments(&assignments, &[]),
+            assignments,
+            "an empty active-member answer means every assigned user departed",
+        );
+        // An empty ledger is the other idempotent case: no rows, no work.
+        assert!(departed_seat_assignments(&[], &["u-1".to_owned()]).is_empty());
     }
 }

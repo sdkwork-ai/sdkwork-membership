@@ -32,3 +32,6 @@ export type { AdminMembershipEntitlementListResponse } from './admin-membership-
 export type { MembershipCategory } from './membership-category';
 export type { AdminMembershipCatalogMeta } from './admin-membership-catalog-meta';
 export type { AdminMembershipCatalogMetaResponse } from './admin-membership-catalog-meta-response';
+export type { TeamSubscriptionStatus } from './team-subscription-status';
+export type { AdminTeamSubscriptionItem } from './admin-team-subscription-item';
+export type { AdminTeamSubscriptionListResponse } from './admin-team-subscription-list-response';

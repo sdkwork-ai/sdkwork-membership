@@ -32,11 +32,12 @@ use sdkwork_membership_repository_sqlx::{
     DeleteAdminMembershipPlanCommand, ListAdminMembershipEntitlementsQuery,
     ListAdminMembershipMembersQuery, ListAdminMembershipPackageGroupsQuery,
     ListAdminMembershipPackagesQuery, ListAdminMembershipPlansQuery,
-    PostgresCommerceMembershipStore, RetrieveAdminMembershipMemberQuery,
-    TimestampMembershipEntityIdGenerator, UpdateAdminMembershipMemberStatusCommand,
-    UpdateAdminMembershipPackageCommand, UpdateAdminMembershipPackageGroupCommand,
-    UpdateAdminMembershipPlanCommand,
+    ListAdminTeamSubscriptionsQuery, PostgresCommerceMembershipStore,
+    RetrieveAdminMembershipMemberQuery, TimestampMembershipEntityIdGenerator,
+    UpdateAdminMembershipMemberStatusCommand, UpdateAdminMembershipPackageCommand,
+    UpdateAdminMembershipPackageGroupCommand, UpdateAdminMembershipPlanCommand,
 };
+use sdkwork_utils_rust::{MAX_LIST_PAGE, MAX_LIST_PAGE_SIZE};
 use sdkwork_web_core::WebRequestContext;
 
 const MAX_CODE_LEN: usize = 128;
@@ -84,6 +85,17 @@ struct AdminMembershipEntitlementsQuery {
     plan_id: Option<String>,
     membership_id: Option<String>,
     status: Option<String>,
+    page: Option<i64>,
+    page_size: Option<i64>,
+    cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AdminTeamSubscriptionsQuery {
+    q: Option<String>,
+    status: Option<String>,
+    plan_id: Option<String>,
+    organization_id: Option<String>,
     page: Option<i64>,
     page_size: Option<i64>,
     cursor: Option<String>,
@@ -204,6 +216,10 @@ pub fn admin_membership_router_with_store(
         .route(
             "/backend/v3/api/memberships/entitlements",
             get(list_entitlements),
+        )
+        .route(
+            "/backend/v3/api/memberships/team_subscriptions",
+            get(list_team_subscriptions),
         )
         .route(
             "/backend/v3/api/memberships/meta/catalog",
@@ -788,6 +804,47 @@ async fn list_entitlements(
     )
 }
 
+/// Admin/ops organization (team) subscription list.
+///
+/// Membership-owned facts only: the tenant scope comes from the backend
+/// principal and the optional organization filter narrows by IAM organization
+/// id. No IAM port is called — profiles, organization roles, and member rows
+/// stay IAM-owned and are composed by the caller.
+async fn list_team_subscriptions(
+    ctx: WebRequestContext,
+    State(state): State<AdminMembershipState>,
+    Query(params): Query<AdminTeamSubscriptionsQuery>,
+) -> axum::response::Response {
+    finish_api_json(
+        &ctx,
+        async {
+            let subject = admin_membership_subject_from_context(&ctx)?;
+            let items = state
+                .store
+                .list_admin_team_subscriptions(ListAdminTeamSubscriptionsQuery {
+                    subject,
+                    q: normalize_optional_bounded_text(
+                        params.q.as_deref(),
+                        "team subscription q",
+                        MAX_CODE_LEN,
+                    )?,
+                    status: normalize_optional_team_subscription_status_filter(params.status)?,
+                    plan_id: normalize_optional_text(params.plan_id),
+                    organization_id: normalize_optional_text(params.organization_id),
+                    page: normalize_list_page(params.page)?,
+                    page_size: normalize_list_page_size(params.page_size)?,
+                    cursor: normalize_optional_text(params.cursor),
+                })
+                .await
+                .map_err(|e| {
+                    ApiProblem::from_service("team subscription read model is unavailable", e)
+                })?;
+            Ok(items)
+        }
+        .await,
+    )
+}
+
 fn admin_membership_subject_from_context(
     ctx: &WebRequestContext,
 ) -> Result<AdminMembershipSubject, ApiProblem> {
@@ -1193,6 +1250,52 @@ fn normalize_optional_entitlement_status_filter(
     }
 }
 
+/// Team subscription lifecycle filter vocabulary.
+///
+/// The admin read model exposes the four post-activation states plus
+/// `pending_activation`; bare `pending` is an internal pre-order state and is
+/// deliberately not filterable.
+fn normalize_optional_team_subscription_status_filter(
+    value: Option<String>,
+) -> Result<Option<String>, ApiProblem> {
+    match value {
+        None => Ok(None),
+        Some(raw) if raw.trim().is_empty() => Ok(None),
+        Some(raw) => match raw.trim().to_ascii_lowercase().as_str() {
+            "pending_activation" | "active" | "grace_period" | "expired" | "cancelled" => {
+                Ok(Some(raw.trim().to_ascii_lowercase()))
+            }
+            _ => Err(ApiProblem::bad_request(
+                "team subscription status must be pending_activation, active, grace_period, expired, or cancelled",
+            )),
+        },
+    }
+}
+
+/// Validate the `page` query parameter (1-based, bounded per PAGINATION_SPEC).
+fn normalize_list_page(value: Option<i64>) -> Result<Option<i64>, ApiProblem> {
+    match value {
+        None => Ok(None),
+        Some(page) if (1..=MAX_LIST_PAGE).contains(&page) => Ok(Some(page)),
+        Some(_) => Err(ApiProblem::bad_request(
+            "page must be an integer between 1 and 10000",
+        )),
+    }
+}
+
+/// Validate the `page_size` query parameter (1..=200 per PAGINATION_SPEC).
+fn normalize_list_page_size(value: Option<i64>) -> Result<Option<i64>, ApiProblem> {
+    match value {
+        None => Ok(None),
+        Some(page_size) if (1..=i64::from(MAX_LIST_PAGE_SIZE)).contains(&page_size) => {
+            Ok(Some(page_size))
+        }
+        Some(_) => Err(ApiProblem::bad_request(
+            "page_size must be an integer between 1 and 200",
+        )),
+    }
+}
+
 fn normalize_path_id(value: &str, field_name: &str) -> Result<String, ApiProblem> {
     normalize_required_text(Some(value), field_name, 128)
 }
@@ -1235,5 +1338,68 @@ mod tests {
 
         assert!(is_uuid(&request_id), "{request_id}");
         assert_ne!("browser-generated-id", request_id);
+    }
+
+    #[test]
+    fn team_subscription_status_filter_accepts_the_declared_lifecycle_vocabulary() {
+        for status in [
+            "pending_activation",
+            "active",
+            "grace_period",
+            "expired",
+            "cancelled",
+        ] {
+            assert_eq!(
+                Some(status.to_owned()),
+                normalize_optional_team_subscription_status_filter(Some(
+                    status.to_ascii_uppercase()
+                ))
+                .expect("declared lifecycle status"),
+                "{status}",
+            );
+        }
+
+        assert_eq!(
+            None,
+            normalize_optional_team_subscription_status_filter(None).expect("absent filter")
+        );
+        assert_eq!(
+            None,
+            normalize_optional_team_subscription_status_filter(Some("  ".to_owned()))
+                .expect("blank filter")
+        );
+        for rejected in ["pending", "suspended", "active; DROP TABLE", "unknown"] {
+            assert!(
+                normalize_optional_team_subscription_status_filter(Some(rejected.to_owned()))
+                    .is_err(),
+                "{rejected} must be rejected",
+            );
+        }
+    }
+
+    #[test]
+    fn team_subscription_pagination_rejects_out_of_range_window() {
+        assert_eq!(None, normalize_list_page(None).expect("absent page"));
+        assert_eq!(Some(1), normalize_list_page(Some(1)).expect("first page"));
+        assert_eq!(
+            Some(MAX_LIST_PAGE),
+            normalize_list_page(Some(MAX_LIST_PAGE)).expect("last page")
+        );
+        assert!(normalize_list_page(Some(0)).is_err());
+        assert!(normalize_list_page(Some(-1)).is_err());
+        assert!(normalize_list_page(Some(MAX_LIST_PAGE + 1)).is_err());
+
+        assert_eq!(None, normalize_list_page_size(None).expect("absent size"));
+        assert_eq!(
+            Some(1),
+            normalize_list_page_size(Some(1)).expect("minimum page size")
+        );
+        assert_eq!(
+            Some(200),
+            normalize_list_page_size(Some(200)).expect("maximum page size")
+        );
+        assert!(normalize_list_page_size(Some(0)).is_err());
+        assert!(normalize_list_page_size(Some(201)).is_err());
+        assert!(normalize_list_page_size(Some(-20)).is_err());
     }
 }

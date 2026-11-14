@@ -1,13 +1,7 @@
-/** Organization (team) subscription overview. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription. */
+/** Organization (team) subscription overview with membership-owned facts only. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription. Organization identity, the viewer's role, and member license counts are IAM facts composed by the caller. */
 export interface TeamSubscriptionOverview {
   /** IAM organization id resolved from the authenticated principal, never from a request header. */
   organizationId: string;
-  organizationName?: string;
-  organizationKind?: string;
-  /** Viewer's IAM organization membership kind (`owner` | `admin` | `member`). */
-  viewerRole?: string;
-  /** True when the viewer role is `owner` or `admin`. */
-  canManageSeats: boolean;
   hasSubscription: boolean;
   subscriptionId?: string;
   /** Catalog plan id as served by `GET /plans` (the plan rank). */
@@ -22,9 +16,4 @@ export interface TeamSubscriptionOverview {
   seatsAvailable: number;
   seatPolicy: 'strict' | 'flex_overflow';
   autoAssignSeat: boolean;
-  membersTotal: number;
-  licensedMembers: number;
-  unlicensedMembers: number;
-  overSeat: boolean;
-  overSeatCount: number;
 }

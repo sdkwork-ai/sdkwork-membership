@@ -1,7 +1,7 @@
 import { appApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipAudience, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory, SdkWorkPageDataTeamSeatMembers, TeamSeatAssignmentCommand, TeamSeatAssignmentItem, TeamSeatPolicyCommand, TeamSubscriptionOverview } from '../types';
+import type { AppMembershipDailyRewardResponse, AppMembershipDailyRewardStatusResponse, AppMembershipInfoResponse, AppMembershipPackageGroupItem, AppMembershipPackageItem, AppMembershipPointsBalanceResponse, AppMembershipPrivilegeUsageResponse, AppMembershipPurchaseOutcome, AppMembershipStatusResponse, CommerceOperationCommand, MembershipAudience, MembershipCategory, MembershipFeatureAccessCheckCommand, MembershipFeatureAccessCheckResult, SdkWorkCommandData, SdkWorkPageDataBenefits, SdkWorkPageDataPackageGroups, SdkWorkPageDataPackages, SdkWorkPageDataPlans, SdkWorkPageDataPointsHistory, SdkWorkPageDataTeamSeatAssignments, TeamSeatAssignment, TeamSeatAssignmentCommand, TeamSeatPolicyCommand, TeamSeatReconciliation, TeamSubscriptionOverview } from '../types';
 
 
 export class MembershipsTeamSeatsPolicyApi {
@@ -21,7 +21,6 @@ export class MembershipsTeamSeatsPolicyApi {
 export interface MembershipsTeamSeatsListParams {
   page?: number;
   pageSize?: number;
-  q?: string;
 }
 
 export class MembershipsTeamSeatsApi {
@@ -34,19 +33,23 @@ export class MembershipsTeamSeatsApi {
   }
 
 
-/** Organization seat directory (one row per active IAM member). */
-  async list(params?: MembershipsTeamSeatsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataTeamSeatMembers> {
+/** Organization seat assignments (one row per active seat). */
+  async list(params?: MembershipsTeamSeatsListParams, requestOptions?: ApiRequestOptions): Promise<SdkWorkPageDataTeamSeatAssignments> {
     const query = buildQueryString([
       { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
       { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
-      { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
     ]);
-    return this.client.request<SdkWorkPageDataTeamSeatMembers>(appendQueryString(appApiPath(`/memberships/team/seats`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+    return this.client.request<SdkWorkPageDataTeamSeatAssignments>(appendQueryString(appApiPath(`/memberships/team/seats`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
   }
 
 /** Assign the lowest free seat to an active organization member. */
-  async create(body: TeamSeatAssignmentCommand, requestOptions?: ApiRequestOptions): Promise<TeamSeatAssignmentItem> {
-    return this.client.request<TeamSeatAssignmentItem>(appApiPath(`/memberships/team/seats`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  async create(body: TeamSeatAssignmentCommand, requestOptions?: ApiRequestOptions): Promise<TeamSeatAssignment> {
+    return this.client.request<TeamSeatAssignment>(appApiPath(`/memberships/team/seats`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, body, contentType: 'application/json', sdkworkUnwrapKind: 'item' });
+  }
+
+/** Reconcile seat assignments with the active organization roster. */
+  async reconcile(requestOptions?: ApiRequestOptions): Promise<TeamSeatReconciliation> {
+    return this.client.request<TeamSeatReconciliation>(appApiPath(`/memberships/team/seats/reconcile`), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'POST' as any, sdkworkUnwrapKind: 'item' });
   }
 
 /** Revoke the active seat assignment of an organization member. */

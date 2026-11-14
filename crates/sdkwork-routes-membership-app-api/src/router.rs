@@ -30,8 +30,9 @@ use sdkwork_membership_repository_sqlx::{
     AppMembershipEntityIdGenerator, AppMembershipListQuery, AppMembershipPointsHistoryQuery,
     AppMembershipPurchaseOutcome, AppMembershipResult, AppMembershipStore, AppMembershipSubject,
     AppMembershipTeamScope, AssignTeamSeatCommand, FeatureAccessCheckQuery,
-    PostgresCommerceMembershipStore, RevokeTeamSeatCommand, SubmitMembershipPurchaseCommand,
-    TeamSeatsQuery, TeamSubscriptionQuery, UpdateTeamSeatPolicyCommand,
+    PostgresCommerceMembershipStore, ReconcileTeamSeatsCommand, RevokeTeamSeatCommand,
+    SubmitMembershipPurchaseCommand, TeamSeatsQuery, TeamSubscriptionQuery,
+    UpdateTeamSeatPolicyCommand,
 };
 use sdkwork_web_core::WebRequestContext;
 
@@ -103,13 +104,14 @@ struct MembershipAudienceQuery {
 }
 
 /// `GET /team/seats` query parameters.
+///
+/// The endpoint pages membership-owned seat assignments only. Member search is
+/// an IAM roster concern and is never forwarded here.
 #[derive(Debug, Deserialize)]
 struct TeamSeatsListQuery {
     page: Option<i64>,
     #[serde(rename = "page_size")]
     page_size: Option<i64>,
-    /// Free-text search over username / display name / email.
-    q: Option<String>,
 }
 
 /// `POST /team/seats` body.
@@ -316,6 +318,10 @@ fn app_membership_router_with_state(
         .route(
             "/app/v3/api/memberships/team/seats",
             get(fetch_team_seats).post(create_team_seat),
+        )
+        .route(
+            "/app/v3/api/memberships/team/seats/reconcile",
+            post(reconcile_team_seats),
         )
         .route(
             "/app/v3/api/memberships/team/seats/policy",
@@ -1054,7 +1060,6 @@ async fn fetch_team_seats(
                 .store
                 .load_team_seats(TeamSeatsQuery {
                     scope: scope.into_scope(),
-                    q: normalize_optional_text(query.q),
                     page: query.page,
                     page_size: query.page_size,
                 })
@@ -1097,6 +1102,34 @@ async fn create_team_seat(
                 .assign_team_seat(AssignTeamSeatCommand {
                     scope: scope.into_scope(),
                     target_user_id,
+                    requested_at: current_timestamp_string(),
+                })
+                .await
+                .map_err(map_team_service_error)
+                .map(item_envelope)
+        }
+        .await,
+    )
+}
+
+/// Revoke every seat assignment whose user IAM no longer reports as an active
+/// organization member, then return the membership-owned seat counters.
+///
+/// No request body: the organization scope comes from the authenticated
+/// principal and the removed members come from the IAM-owned directory port.
+/// Idempotent — a second call revokes 0 and returns the current counters.
+async fn reconcile_team_seats(
+    ctx: WebRequestContext,
+    State(state): State<AppMembershipState>,
+) -> axum::response::Response {
+    finish_api_json(
+        &ctx,
+        async {
+            let scope = resolve_required_team_scope(&ctx)?;
+            state
+                .store
+                .reconcile_team_seats(ReconcileTeamSeatsCommand {
+                    scope: scope.into_scope(),
                     requested_at: current_timestamp_string(),
                 })
                 .await
@@ -1202,13 +1235,14 @@ mod tests {
         assert_eq!(packages.plan_id, None);
         assert_eq!(packages.audience, None);
 
-        let team_seats_uri = "/app/v3/api/memberships/team/seats?page=2&page_size=50&q=ann";
+        // The seat page only carries standard pagination; member search is an
+        // IAM roster concern and has no membership query parameter.
+        let team_seats_uri = "/app/v3/api/memberships/team/seats?page=2&page_size=50";
         let team_seats_uri = team_seats_uri.parse().expect("team seats URI");
         let Query(team_seats) =
             Query::<TeamSeatsListQuery>::try_from_uri(&team_seats_uri).expect("team seats query");
         assert_eq!(team_seats.page, Some(2));
         assert_eq!(team_seats.page_size, Some(50));
-        assert_eq!(team_seats.q.as_deref(), Some("ann"));
     }
 
     #[test]

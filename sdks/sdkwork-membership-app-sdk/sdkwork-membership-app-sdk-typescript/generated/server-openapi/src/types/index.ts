@@ -43,13 +43,14 @@ export type { MembershipFeatureAccessCheckResult } from './membership-feature-ac
 export type { MembershipAudience } from './membership-audience';
 export type { MembershipPriceUnit } from './membership-price-unit';
 export type { TeamSubscriptionOverview } from './team-subscription-overview';
-export type { TeamSeatMember } from './team-seat-member';
-export type { TeamSeatAssignmentItem } from './team-seat-assignment-item';
+export type { TeamSeatAssignment } from './team-seat-assignment';
 export type { TeamSeatAssignmentCommand } from './team-seat-assignment-command';
 export type { TeamSeatPolicyCommand } from './team-seat-policy-command';
+export type { TeamSeatReconciliation } from './team-seat-reconciliation';
+export type { SdkWorkResourceDataTeamSeatReconciliation } from './sdk-work-resource-data-team-seat-reconciliation';
 export type { SdkWorkResourceDataTeamSubscriptionOverview } from './sdk-work-resource-data-team-subscription-overview';
 export type { SdkWorkResourceDataTeamSeatAssignment } from './sdk-work-resource-data-team-seat-assignment';
-export type { SdkWorkPageDataTeamSeatMembers } from './sdk-work-page-data-team-seat-members';
+export type { SdkWorkPageDataTeamSeatAssignments } from './sdk-work-page-data-team-seat-assignments';
 export type { MembershipCategory } from './membership-category';
 export type { CurrentRetrieveResponse } from './current-retrieve-response';
 export type { CurrentStatusRetrieveResponse } from './current-status-retrieve-response';
@@ -73,4 +74,5 @@ export type { AccessChecksCreateResponse201 } from './access-checks-create-respo
 export type { TeamSubscriptionRetrieveResponse } from './team-subscription-retrieve-response';
 export type { TeamSeatsListResponse } from './team-seats-list-response';
 export type { TeamSeatsCreateResponse201 } from './team-seats-create-response201';
+export type { TeamSeatsReconcileResponse } from './team-seats-reconcile-response';
 export type { TeamSeatsPolicyUpdateResponse } from './team-seats-policy-update-response';

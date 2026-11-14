@@ -2,8 +2,8 @@
 //!
 //! The fast source guards in `membership_sqlx_standard.rs` keep the SQL shape
 //! visible without a database. This ignored test is the cheap runtime check
-//! that the IAM directory projection and the team subscription lookup parse
-//! against a real schema. Run with:
+//! that the team subscription lookup and the seat assignment page parse against
+//! a real schema. Run with:
 //!
 //! ```text
 //! cargo test -p sdkwork-membership-repository-sqlx --test team_seats_live_postgres -- --ignored
@@ -31,7 +31,7 @@ fn scope() -> AppMembershipTeamScope {
 }
 
 #[tokio::test]
-#[ignore = "requires a local PostgreSQL database with the membership + IAM schemas migrated"]
+#[ignore = "requires a local PostgreSQL database with the membership schema migrated"]
 async fn team_subscription_overview_parses_against_live_schema() {
     let pool = sqlx::PgPool::connect(&database_url())
         .await
@@ -42,22 +42,20 @@ async fn team_subscription_overview_parses_against_live_schema() {
         .load_team_subscription(TeamSubscriptionQuery { scope: scope() })
         .await
         .expect("team subscription overview");
+    // Membership-owned facts only: the response never carries IAM identity,
+    // the viewer role, or member license counts.
     assert_eq!(overview.organization_id, "999999901");
-    assert!(overview.members_total >= 0);
-    assert_eq!(
-        overview.licensed_members + overview.unlicensed_members,
-        overview.members_total
-    );
-    assert!(!overview.can_manage_seats || overview.viewer_role.is_some());
+    assert!(overview.seats_purchased >= 0);
+    assert!(overview.seats_used >= 0);
+    assert!(overview.seats_available >= 0);
 
     let seats = store
         .load_team_seats(TeamSeatsQuery {
             scope: scope(),
-            q: Some("seed".to_owned()),
             page: Some(1),
             page_size: Some(5),
         })
         .await
-        .expect("team seat directory");
+        .expect("team seat assignments");
     assert!(seats.items.len() <= 5);
 }

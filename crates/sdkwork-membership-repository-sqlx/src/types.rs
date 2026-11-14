@@ -65,16 +65,19 @@ pub fn is_valid_membership_seat_policy(value: &str) -> bool {
 /// Seat assignment lifecycle vocabulary.
 pub const MEMBERSHIP_SEAT_ASSIGNMENT_STATES: [&str; 2] = ["active", "revoked"];
 
-/// Organization roles projected from the IAM directory port (`membership_kind`).
+/// Paid-order action that expands an existing organization subscription's
+/// licensed seat capacity.
 ///
-/// IAM owns the role; membership only projects it to decide whether the
-/// viewer may manage seats (`owner` | `admin`).
-pub const MEMBERSHIP_TEAM_ROLES: [&str; 3] = ["owner", "admin", "member"];
-
-/// Returns true when the projected IAM role may manage organization seats.
-pub fn membership_role_can_manage_seats(role: &str) -> bool {
-    matches!(role.trim().to_ascii_lowercase().as_str(), "owner" | "admin")
-}
+/// `add_seats` is fulfilled by incrementing
+/// `membership_subscription.seats_purchased` for the buyer organization's
+/// active/`grace_period` subscription of the same plan family. It never creates
+/// a new subscription or period, never touches `starts_at`/`expires_at`/
+/// `current_period_id`, and never changes `seats_used`; the audit row is written
+/// as `seat_purchase` with metadata `{"seats":N,"mode":"add_seats"}`.
+///
+/// `renew` remains the period-extension action, so "buy more seats" can no
+/// longer reuse it.
+pub const MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS: &str = "add_seats";
 
 /// Static catalog enum reference served to admin surfaces as the single
 /// source of truth for dropdown options (kept in sync with the database
@@ -429,6 +432,10 @@ pub struct FulfillPaidMembershipPurchaseCommand {
     pub action: String,
     /// Seat quantity from the paid order (team plans). Must be at least 1 and
     /// is ignored by personal plans, which always license a single seat.
+    ///
+    /// For `action = "add_seats"` this is the number of seats to ADD to the
+    /// organization's existing subscription (`seats_purchased += seats`), not the
+    /// resulting seat total.
     pub seats: i64,
     /// Raw IAM organization id from the paid order. Used as the subscription
     /// `subject_id` when the purchased plan audience is `team`.
@@ -530,6 +537,41 @@ pub struct AdminMembershipMemberItem {
     pub expires_at: String,
 }
 
+/// One organization (team) subscription row for the admin/ops read model.
+///
+/// Membership-owned facts only. The organization identity is the subscription
+/// `subject_id` (the IAM organization id licensed by the plan); IAM profiles,
+/// organization roles, and member rows are never read or projected here.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminTeamSubscriptionItem {
+    /// Membership subscription storage id.
+    pub subscription_id: String,
+    /// IAM organization id the subscription is licensed to.
+    pub organization_id: String,
+    /// Membership plan storage id.
+    pub plan_id: String,
+    /// Display name of the joined plan (absent when the plan row is gone).
+    pub plan_name: Option<String>,
+    pub status: String,
+    pub starts_at: String,
+    pub expires_at: String,
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seats_purchased: i64,
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seats_used: i64,
+    #[serde(with = "sdkwork_utils_rust::serde_int64")]
+    pub seats_available: i64,
+    /// `strict` or `flex_overflow`.
+    pub seat_policy: String,
+    pub auto_assign_seat: bool,
+    /// IAM user id of the subscription owner; IAM remains the owner of the
+    /// user profile.
+    pub owner_user_id: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminMembershipEntitlementItem {
@@ -579,6 +621,26 @@ pub struct ListAdminMembershipMembersQuery {
     pub user_id: Option<String>,
     pub plan_id: Option<String>,
     pub status: Option<String>,
+    pub page: Option<i64>,
+    pub page_size: Option<i64>,
+    pub cursor: Option<String>,
+}
+
+/// Query for the admin/ops organization (team) subscription read model.
+///
+/// `subject` carries the tenant/organization scope resolved from the backend
+/// principal, never from an ambient header. Only the tenant scopes the query:
+/// this is a tenant-wide ops view, so the caller's own organization is not an
+/// implicit filter. `organization_id` narrows explicitly to one IAM
+/// organization id, and `q` is a free-text match over the subscription id,
+/// organization id, and plan name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ListAdminTeamSubscriptionsQuery {
+    pub subject: AdminMembershipSubject,
+    pub q: Option<String>,
+    pub status: Option<String>,
+    pub plan_id: Option<String>,
+    pub organization_id: Option<String>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
     pub cursor: Option<String>,
@@ -856,12 +918,13 @@ pub struct TeamSubscriptionQuery {
     pub scope: AppMembershipTeamScope,
 }
 
-/// Query for the organization seat directory (one row per active IAM member).
+/// Query for the organization seat assignments (one row per active seat).
+///
+/// The IAM member directory is not read here: the organization roster is an
+/// IAM-owned fact and the caller composes it through the IAM app SDK.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TeamSeatsQuery {
     pub scope: AppMembershipTeamScope,
-    /// Free-text match on membership display name, IAM username, and email.
-    pub q: Option<String>,
     pub page: Option<i64>,
     pub page_size: Option<i64>,
 }
@@ -875,11 +938,6 @@ pub struct TeamSeatsQuery {
 pub struct TeamSubscriptionOverview {
     /// Raw IAM organization id (never a header; resolved from the principal).
     pub organization_id: String,
-    pub organization_name: Option<String>,
-    pub organization_kind: Option<String>,
-    /// Viewer's IAM organization role (`owner` | `admin` | `member`).
-    pub viewer_role: Option<String>,
-    pub can_manage_seats: bool,
     pub has_subscription: bool,
     pub subscription_id: Option<String>,
     /// Catalog plan id as served by `GET /plans` (the plan rank).
@@ -896,41 +954,21 @@ pub struct TeamSubscriptionOverview {
     pub seats_available: i64,
     pub seat_policy: String,
     pub auto_assign_seat: bool,
-    pub members_total: i64,
-    pub licensed_members: i64,
-    pub unlicensed_members: i64,
-    pub over_seat: bool,
-    pub over_seat_count: i64,
 }
 
-/// One row of the organization seat directory.
+/// One active organization seat assignment.
+///
+/// Membership owns the assignment row only. Member identity, role, and contact
+/// data stay IAM-owned and are composed by the caller from the IAM roster.
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct TeamSeatMember {
-    /// IAM user id.
+pub struct TeamSeatAssignment {
+    /// IAM user id the seat is assigned to.
     pub user_id: String,
-    /// IAM organization membership row id.
-    pub membership_id: String,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    /// IAM membership kind (`owner` | `admin` | `member`).
-    pub membership_kind: String,
-    pub member_status: Option<String>,
-    /// `active` when a seat is assigned, otherwise `unassigned`.
-    pub seat_state: String,
-    pub seat_no: Option<i64>,
-    pub assigned_at: Option<String>,
-}
-
-/// Result of assigning a seat to an organization member.
-#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct TeamSeatAssignmentItem {
-    pub user_id: String,
+    /// IAM organization membership row id snapshotted at assignment time.
+    pub membership_id: Option<String>,
     pub seat_no: i64,
     pub assigned_at: String,
-    pub display_name: Option<String>,
-    pub membership_id: Option<String>,
 }
 
 /// Assign a seat to an active organization member.
@@ -956,6 +994,34 @@ pub struct UpdateTeamSeatPolicyCommand {
     pub seat_policy: String,
     pub auto_assign_seat: bool,
     pub requested_at: String,
+}
+
+/// Reconcile the organization seat ledger with the IAM-owned roster.
+///
+/// IAM is the owner of organization membership, so membership never decides on
+/// its own whether an assigned user is still an active member: the store asks
+/// the injected [`IamOrganizationDirectory`](sdkwork_iam_directory_repository_sqlx::IamOrganizationDirectory)
+/// port through `filter_active_member_ids`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReconcileTeamSeatsCommand {
+    pub scope: AppMembershipTeamScope,
+    pub requested_at: String,
+}
+
+/// Outcome of one seat reconciliation sweep.
+///
+/// Membership-owned facts only. `revoked_count = 0` is the normal answer for a
+/// repeat call: reconciliation is idempotent and a second sweep revokes
+/// nothing.
+#[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamSeatReconciliation {
+    /// Assignments revoked because their user left the organization.
+    pub revoked_count: i64,
+    /// Active seat count after the sweep.
+    pub seats_used: i64,
+    /// Licensed capacity of the current team subscription.
+    pub seats_purchased: i64,
 }
 
 pub trait AppMembershipStore {
@@ -1090,17 +1156,17 @@ pub trait AppMembershipStore {
         query: TeamSubscriptionQuery,
     ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview>;
 
-    /// Organization seat directory: one row per active IAM organization member.
+    /// Organization seat assignments: one row per active seat.
     fn load_team_seats<'a>(
         &'a self,
         query: TeamSeatsQuery,
-    ) -> AppMembershipReadFuture<'a, SdkWorkPageData<TeamSeatMember>>;
+    ) -> AppMembershipReadFuture<'a, SdkWorkPageData<TeamSeatAssignment>>;
 
     /// Assign the lowest free seat to an active organization member.
     fn assign_team_seat<'a>(
         &'a self,
         command: AssignTeamSeatCommand,
-    ) -> AppMembershipReadFuture<'a, TeamSeatAssignmentItem>;
+    ) -> AppMembershipReadFuture<'a, TeamSeatAssignment>;
 
     /// Revoke an active seat assignment.
     fn revoke_team_seat<'a>(
@@ -1113,6 +1179,16 @@ pub trait AppMembershipStore {
         &'a self,
         command: UpdateTeamSeatPolicyCommand,
     ) -> AppMembershipReadFuture<'a, TeamSubscriptionOverview>;
+
+    /// Revoke the seat assignments of users that IAM no longer reports as
+    /// active organization members.
+    ///
+    /// Idempotent: a second call finds no stale assignment and returns
+    /// `revoked_count = 0`.
+    fn reconcile_team_seats<'a>(
+        &'a self,
+        command: ReconcileTeamSeatsCommand,
+    ) -> AppMembershipReadFuture<'a, TeamSeatReconciliation>;
 }
 
 pub trait AdminMembershipStore {
@@ -1195,4 +1271,14 @@ pub trait AdminMembershipStore {
         &'a self,
         query: ListAdminMembershipEntitlementsQuery,
     ) -> AdminMembershipFuture<'a, SdkWorkPageData<AdminMembershipEntitlementItem>>;
+
+    /// Organization (team) subscription read model for admin/ops surfaces.
+    ///
+    /// Projects membership-owned facts only (`membership_subscription` joined to
+    /// `membership_plan` for the plan name); the organization roster and caller
+    /// roles stay IAM-owned and are composed by the caller.
+    fn list_admin_team_subscriptions<'a>(
+        &'a self,
+        query: ListAdminTeamSubscriptionsQuery,
+    ) -> AdminMembershipFuture<'a, SdkWorkPageData<AdminTeamSubscriptionItem>>;
 }

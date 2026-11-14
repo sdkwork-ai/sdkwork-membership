@@ -1,8 +1,41 @@
 import { backendApiPath } from './paths';
 import type { ApiRequestOptions, HttpClient } from '../http/client';
 
-import type { AdminMembershipCatalogMeta, AdminMembershipEntitlementItem, AdminMembershipMemberItem, AdminMembershipMemberStatusUpdate, AdminMembershipPackageGroupItem, AdminMembershipPackageGroupMutation, AdminMembershipPackageItem, AdminMembershipPackageMutation, AdminMembershipPlanItem, AdminMembershipPlanMutation, MembershipCategory, PageInfo } from '../types';
+import type { AdminMembershipCatalogMeta, AdminMembershipEntitlementItem, AdminMembershipMemberItem, AdminMembershipMemberStatusUpdate, AdminMembershipPackageGroupItem, AdminMembershipPackageGroupMutation, AdminMembershipPackageItem, AdminMembershipPackageMutation, AdminMembershipPlanItem, AdminMembershipPlanMutation, AdminTeamSubscriptionItem, MembershipCategory, PageInfo, TeamSubscriptionStatus } from '../types';
 
+
+export interface MembershipsTeamSubscriptionsListParams {
+  q?: string;
+  status?: TeamSubscriptionStatus;
+  planId?: string;
+  organizationId?: string;
+  page?: number;
+  pageSize?: number;
+  cursor?: string;
+}
+
+export class MembershipsTeamSubscriptionsApi {
+  private client: HttpClient;
+
+  constructor(client: HttpClient) {
+    this.client = client;
+  }
+
+
+/** Organization (team) subscriptions list. */
+  async list(params?: MembershipsTeamSubscriptionsListParams, requestOptions?: ApiRequestOptions): Promise<{ items: AdminTeamSubscriptionItem[]; pageInfo: PageInfo; }> {
+    const query = buildQueryString([
+      { name: 'q', value: params?.q, style: 'form', explode: true, allowReserved: false },
+      { name: 'status', value: params?.status, style: 'form', explode: true, allowReserved: false },
+      { name: 'plan_id', value: params?.planId, style: 'form', explode: true, allowReserved: false },
+      { name: 'organization_id', value: params?.organizationId, style: 'form', explode: true, allowReserved: false },
+      { name: 'page', value: params?.page, style: 'form', explode: true, allowReserved: false },
+      { name: 'page_size', value: params?.pageSize, style: 'form', explode: true, allowReserved: false },
+      { name: 'cursor', value: params?.cursor, style: 'form', explode: true, allowReserved: false },
+    ]);
+    return this.client.request<{ items: AdminTeamSubscriptionItem[]; pageInfo: PageInfo; }>(appendQueryString(backendApiPath(`/memberships/team_subscriptions`), query), { ...(requestOptions?.signal !== undefined ? { signal: requestOptions.signal } : {}), ...(requestOptions?.timeout !== undefined ? { timeout: requestOptions.timeout } : {}), method: 'GET' as any, sdkworkUnwrapKind: 'page' });
+  }
+}
 
 export class MembershipsMetaCatalogApi {
   private client: HttpClient;
@@ -234,6 +267,7 @@ export class MembershipsApi {
   public readonly members: MembershipsMembersApi;
   public readonly entitlements: MembershipsEntitlementsApi;
   public readonly metaCatalog: MembershipsMetaCatalogApi;
+  public readonly teamSubscriptions: MembershipsTeamSubscriptionsApi;
 
   constructor(client: HttpClient) {
     this.plans = new MembershipsPlansApi(client);
@@ -242,6 +276,7 @@ export class MembershipsApi {
     this.members = new MembershipsMembersApi(client);
     this.entitlements = new MembershipsEntitlementsApi(client);
     this.metaCatalog = new MembershipsMetaCatalogApi(client);
+    this.teamSubscriptions = new MembershipsTeamSubscriptionsApi(client);
   }
 
 }

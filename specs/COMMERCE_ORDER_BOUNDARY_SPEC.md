@@ -59,6 +59,37 @@ The standalone membership application intentionally has no default ordering capa
 
 No pending Membership subscription is required before payment. Order does not query Membership state during settlement, and Membership does not query Order tables during fulfillment.
 
+## 5.1 Seat Expansion (`action = 'add_seats'`)
+
+"Buy more seats" is seat expansion, not renewal. `add_seats` is a first-class
+paid-order action and MUST NOT reuse `renew`, which extends the subscription
+period.
+
+- **Order side.** `quantity` is the number of seats to ADD (1..10000). The order
+  total is `package seat unit price × quantity`. The order is a membership order
+  with `action = 'add_seats'`; it carries no `grantQuantity`/`amount` and it
+  requires an organization scope. The action flows through the settlement
+  snapshot and `MembershipPurchaseFulfillmentRequest` unchanged.
+- **Membership side.** Paid fulfillment branches on `add_seats` before the
+  new-subscription path, under `pg_advisory_xact_lock`. It locates the buyer
+  organization's `active`/`grace_period` organization subscription for the same
+  plan family (`plan_id`, or the current package id) and executes
+  `membership_subscription.seats_purchased += seats`. `starts_at`, `expires_at`,
+  `current_period_id`, and `seats_used` stay unchanged, and no subscription or
+  period row is created. The audit row is `membership_change_log`
+  `action = 'seat_purchase'` with metadata `{"seats":N,"mode":"add_seats"}`.
+- **Rejections.** No active team subscription, a personal-plan package, or a
+  package outside the active plan family is a validation/conflict rejection.
+- **Idempotency.** Replay is keyed by the order id: the membership audit row
+  carries `reason = 'seat_purchase:order:<orderId>'`, is checked before the
+  increment, and a replay returns the same outcome without adding seats twice.
+- **Pricing note.** Added seats are charged at the package's full seat price for
+  the current term: the period is not extended and no proration is applied.
+  Day-based proration is deliberately not implemented, so order-side pricing
+  never needs the subscription's remaining term.
+- `renew`/`purchase`/`upgrade` behavior for team plans is unchanged, and
+  personal plans are unaffected.
+
 ## 6. Verification
 
 - `rg '@sdkwork/order|@sdkwork/payment' apps packages` returns no active membership consumer dependency.

@@ -106,9 +106,44 @@ export interface SdkworkMembershipPurchaseResult {
   targetLevelName?: string;
 }
 
-export interface SdkworkMembershipCheckoutRequest extends SdkworkMembershipMutationInput {
-  action: "purchase" | "renew" | "upgrade" | "recharge";
-}
+export type SdkworkMembershipCheckoutAction =
+  | "purchase"
+  | "renew"
+  | "upgrade"
+  | "recharge"
+  | "add_seats";
+
+/**
+ * Checkout actions priced from a catalog package, so they must name one.
+ *
+ * `add_seats` expands the buyer organization's existing active team
+ * subscription by `quantity` seats; it is catalog-priced like the other
+ * lifecycle actions.
+ */
+export type SdkworkMembershipCatalogCheckoutAction = Exclude<
+  SdkworkMembershipCheckoutAction,
+  "recharge"
+>;
+
+/**
+ * Discriminated checkout request handed to a host-provided
+ * {@link SdkworkMembershipCheckoutPort}.
+ *
+ * `packageId` is **required** for every catalog action
+ * (`purchase`/`renew`/`upgrade`/`add_seats`) and optional only for `recharge`,
+ * which the order service prices from `grantQuantity` + `amountCny` instead of
+ * the catalog. Modeling this as a union keeps the requirement at the port
+ * contract instead of relying on a cast at the composition root.
+ */
+export type SdkworkMembershipCheckoutRequest =
+  | (SdkworkMembershipMutationInput & {
+      action: SdkworkMembershipCatalogCheckoutAction;
+      packageId: number;
+    })
+  | (SdkworkMembershipMutationInput & {
+      action: "recharge";
+      packageId?: number;
+    });
 
 /** 会员功能门槛校验结果。 */
 export interface SdkworkMembershipFeatureGate {
@@ -351,7 +386,7 @@ function deniedFeatureGates(featureCodes: string[]): SdkworkMembershipFeatureGat
 
 async function runPurchaseMutation(
   copy: SdkworkMembershipMessages["service"],
-  action: "purchase" | "renew" | "upgrade" | "recharge",
+  action: SdkworkMembershipCheckoutAction,
   input: SdkworkMembershipMutationInput,
   checkoutPort: SdkworkMembershipCheckoutPort | undefined,
 ): Promise<SdkworkMembershipPurchaseResult> {
@@ -359,7 +394,16 @@ async function runPurchaseMutation(
   if (!checkoutPort) {
     throw new Error("Membership checkout is not configured by the host application.");
   }
-  return checkoutPort.createCheckout({ ...input, action });
+  if (action === "recharge") {
+    return checkoutPort.createCheckout({ ...input, action });
+  }
+  // Catalog actions cannot be priced without the package they sell, so the
+  // required-package branch of the checkout union is only reachable with one.
+  const { packageId } = input;
+  if (packageId === undefined || !Number.isFinite(packageId) || packageId <= 0) {
+    throw new Error("Select a membership package before continuing.");
+  }
+  return checkoutPort.createCheckout({ ...input, action, packageId });
 }
 
 function createEmptyDashboard(): SdkworkMembershipDashboardData {

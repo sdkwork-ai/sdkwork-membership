@@ -1965,6 +1965,168 @@
         "x-sdkwork-api-surface": "backend-api",
         "x-sdkwork-server-request-id": true
       }
+    },
+    "/backend/v3/api/memberships/team_subscriptions": {
+      "get": {
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Organization (team) subscriptions list.",
+        "operationId": "teamSubscriptions.list",
+        "x-sdkwork-permission": "commerce.memberships.read",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TeamSubscriptionStatus"
+            }
+          },
+          {
+            "name": "plan_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000,
+              "default": 1
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminTeamSubscriptionListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
+        "x-sdkwork-owner": "sdkwork-membership",
+        "x-sdkwork-api-authority": "sdkwork-membership-backend-api",
+        "x-sdkwork-domain": "commerce",
+        "x-sdkwork-resource": "memberships.teamSubscriptions",
+        "x-sdkwork-request-context": "WebRequestContext",
+        "x-sdkwork-api-surface": "backend-api",
+        "x-sdkwork-server-request-id": true
+      }
     }
   },
   "components": {
@@ -3088,6 +3250,142 @@
                 "properties": {
                   "item": {
                     "$ref": "#/components/schemas/AdminMembershipCatalogMeta"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "TeamSubscriptionStatus": {
+        "type": "string",
+        "enum": [
+          "pending_activation",
+          "active",
+          "grace_period",
+          "expired",
+          "cancelled"
+        ],
+        "description": "Organization (team) subscription lifecycle status. Bare `pending` is an internal pre-order state and is not exposed by the admin read model."
+      },
+      "AdminTeamSubscriptionItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "subscriptionId",
+          "organizationId",
+          "planId",
+          "status",
+          "startsAt",
+          "expiresAt",
+          "seatsPurchased",
+          "seatsUsed",
+          "seatsAvailable",
+          "seatPolicy",
+          "autoAssignSeat",
+          "ownerUserId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "One organization (team) subscription. Membership-owned facts only: organization identity is the subscription subject (the IAM organization id) and IAM profiles, organization roles, and member rows are composed by the caller from the IAM surface.",
+        "properties": {
+          "subscriptionId": {
+            "type": "string"
+          },
+          "organizationId": {
+            "type": "string",
+            "description": "IAM organization id the subscription is licensed to."
+          },
+          "planId": {
+            "type": "string"
+          },
+          "planName": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "$ref": "#/components/schemas/TeamSubscriptionStatus"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "seatsPurchased": {
+            "type": "string",
+            "format": "int64",
+            "pattern": "^-?[0-9]+$",
+            "x-sdkwork-int64-string": true
+          },
+          "seatsUsed": {
+            "type": "string",
+            "format": "int64",
+            "pattern": "^-?[0-9]+$",
+            "x-sdkwork-int64-string": true
+          },
+          "seatsAvailable": {
+            "type": "string",
+            "format": "int64",
+            "pattern": "^-?[0-9]+$",
+            "x-sdkwork-int64-string": true
+          },
+          "seatPolicy": {
+            "type": "string",
+            "enum": [
+              "strict",
+              "flex_overflow"
+            ],
+            "description": "`strict` refuses assignments beyond seatsPurchased; `flex_overflow` allows billable over-assignment."
+          },
+          "autoAssignSeat": {
+            "type": "boolean"
+          },
+          "ownerUserId": {
+            "type": "string",
+            "description": "IAM user id of the subscription owner."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AdminTeamSubscriptionListResponse": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/SdkWorkApiResponse"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "items",
+                  "pageInfo"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/AdminTeamSubscriptionItem"
+                    }
+                  },
+                  "pageInfo": {
+                    "$ref": "#/components/schemas/PageInfo"
                   }
                 }
               }

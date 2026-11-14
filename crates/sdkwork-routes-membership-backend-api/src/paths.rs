@@ -22,3 +22,7 @@ pub const MEMBER_DETAIL: &str = "/members/{id}";
 
 /// Entitlements listing: `/backend/v3/api/memberships/entitlements`
 pub const ENTITLEMENTS: &str = "/entitlements";
+
+/// Organization (team) subscription admin/ops read model:
+/// `/backend/v3/api/memberships/team_subscriptions`
+pub const TEAM_SUBSCRIPTIONS: &str = "/team_subscriptions";

@@ -2582,7 +2582,8 @@
         "tags": [
           "memberships"
         ],
-        "summary": "Organization seat directory (one row per active IAM member).",
+        "summary": "Organization seat assignments (one row per active seat).",
+        "description": "Membership-owned seat assignment facts only. The organization member roster is IAM-owned and is composed by the caller through the IAM app SDK.",
         "operationId": "teamSeats.list",
         "parameters": [
           {
@@ -2605,15 +2606,6 @@
               "maximum": 200,
               "default": 20
             }
-          },
-          {
-            "name": "q",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string"
-            },
-            "description": "Free-text search over the member username, display name, and email."
           }
         ],
         "responses": {
@@ -2630,7 +2622,7 @@
                       "type": "object",
                       "properties": {
                         "data": {
-                          "$ref": "#/components/schemas/SdkWorkPageData_TeamSeatMembers"
+                          "$ref": "#/components/schemas/SdkWorkPageData_TeamSeatAssignments"
                         }
                       }
                     }
@@ -2828,6 +2820,114 @@
             }
           }
         }
+      }
+    },
+    "/app/v3/api/memberships/team/seats/reconcile": {
+      "post": {
+        "tags": [
+          "memberships"
+        ],
+        "summary": "Reconcile seat assignments with the active organization roster.",
+        "description": "Revokes every active seat assignment whose user IAM no longer reports as an active organization member, in one transaction serialized per subscription. Returns membership-owned seat counters only. Idempotent: a repeat call revokes 0.",
+        "operationId": "teamSeats.reconcile",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/SdkWorkApiResponse"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SdkWorkResourceData_TeamSeatReconciliation"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetail"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
+        "x-sdkwork-owner": "sdkwork-membership",
+        "x-sdkwork-api-authority": "sdkwork-membership-app-api",
+        "x-sdkwork-domain": "commerce",
+        "x-sdkwork-resource": "memberships.team.seats.reconcile",
+        "x-sdkwork-request-context": "WebRequestContext",
+        "x-sdkwork-api-surface": "app-api",
+        "x-sdkwork-server-request-id": true
       }
     },
     "/app/v3/api/memberships/team/seats/policy": {
@@ -4282,38 +4382,18 @@
         "additionalProperties": false,
         "required": [
           "organizationId",
-          "canManageSeats",
           "hasSubscription",
           "seatsPurchased",
           "seatsUsed",
           "seatsAvailable",
           "seatPolicy",
-          "autoAssignSeat",
-          "membersTotal",
-          "licensedMembers",
-          "unlicensedMembers",
-          "overSeat",
-          "overSeatCount"
+          "autoAssignSeat"
         ],
-        "description": "Organization (team) subscription overview. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription.",
+        "description": "Organization (team) subscription overview with membership-owned facts only. `hasSubscription=false` is a normal 200 response for an organization without an active team subscription. Organization identity, the viewer's role, and member license counts are IAM facts composed by the caller.",
         "properties": {
           "organizationId": {
             "type": "string",
             "description": "IAM organization id resolved from the authenticated principal, never from a request header."
-          },
-          "organizationName": {
-            "type": "string"
-          },
-          "organizationKind": {
-            "type": "string"
-          },
-          "viewerRole": {
-            "type": "string",
-            "description": "Viewer's IAM organization membership kind (`owner` | `admin` | `member`)."
-          },
-          "canManageSeats": {
-            "type": "boolean",
-            "description": "True when the viewer role is `owner` or `admin`."
           },
           "hasSubscription": {
             "type": "boolean"
@@ -4367,77 +4447,10 @@
           },
           "autoAssignSeat": {
             "type": "boolean"
-          },
-          "membersTotal": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "licensedMembers": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "unlicensedMembers": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "overSeat": {
-            "type": "boolean"
-          },
-          "overSeatCount": {
-            "type": "integer",
-            "minimum": 0
           }
         }
       },
-      "TeamSeatMember": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "userId",
-          "membershipId",
-          "membershipKind",
-          "seatState"
-        ],
-        "description": "One organization seat directory row (one row per active IAM organization membership).",
-        "properties": {
-          "userId": {
-            "type": "string",
-            "description": "IAM user id."
-          },
-          "membershipId": {
-            "type": "string",
-            "description": "IAM organization membership row id."
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "email": {
-            "type": "string"
-          },
-          "membershipKind": {
-            "type": "string",
-            "description": "IAM organization role (`owner` | `admin` | `member`)."
-          },
-          "memberStatus": {
-            "type": "string"
-          },
-          "seatState": {
-            "type": "string",
-            "enum": [
-              "active",
-              "unassigned"
-            ]
-          },
-          "seatNo": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "assignedAt": {
-            "type": "string"
-          }
-        }
-      },
-      "TeamSeatAssignmentItem": {
+      "TeamSeatAssignment": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -4445,22 +4458,21 @@
           "seatNo",
           "assignedAt"
         ],
-        "description": "Result of assigning a licensed seat to an organization member.",
+        "description": "One active organization seat assignment. Member identity, role, and contact data stay IAM-owned and are composed by the caller from the IAM roster.",
         "properties": {
           "userId": {
-            "type": "string"
+            "type": "string",
+            "description": "IAM user id the seat is assigned to."
+          },
+          "membershipId": {
+            "type": "string",
+            "description": "IAM organization membership row id snapshotted at assignment time."
           },
           "seatNo": {
             "type": "integer",
             "minimum": 1
           },
           "assignedAt": {
-            "type": "string"
-          },
-          "displayName": {
-            "type": "string"
-          },
-          "membershipId": {
             "type": "string"
           }
         }
@@ -4500,6 +4512,44 @@
           }
         }
       },
+      "TeamSeatReconciliation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revokedCount",
+          "seatsUsed",
+          "seatsPurchased"
+        ],
+        "description": "Result of one member-removal seat reconciliation sweep. Membership-owned seat counters only; `revokedCount` is 0 on a repeat call because reconciliation is idempotent.",
+        "properties": {
+          "revokedCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Seat assignments revoked because their user left the organization."
+          },
+          "seatsUsed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seatsPurchased": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "SdkWorkResourceData_TeamSeatReconciliation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "item"
+        ],
+        "description": "Typed resource data wrapper for a team seat reconciliation.",
+        "properties": {
+          "item": {
+            "$ref": "#/components/schemas/TeamSeatReconciliation"
+          }
+        }
+      },
       "SdkWorkResourceData_TeamSubscriptionOverview": {
         "type": "object",
         "additionalProperties": false,
@@ -4522,23 +4572,23 @@
         "description": "Typed resource data wrapper for a team seat assignment.",
         "properties": {
           "item": {
-            "$ref": "#/components/schemas/TeamSeatAssignmentItem"
+            "$ref": "#/components/schemas/TeamSeatAssignment"
           }
         }
       },
-      "SdkWorkPageData_TeamSeatMembers": {
+      "SdkWorkPageData_TeamSeatAssignments": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "items",
           "pageInfo"
         ],
-        "description": "Typed page data wrapper for the organization seat directory.",
+        "description": "Typed page data wrapper for the organization seat assignments.",
         "properties": {
           "items": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/TeamSeatMember"
+              "$ref": "#/components/schemas/TeamSeatAssignment"
             }
           },
           "pageInfo": {

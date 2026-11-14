@@ -22,6 +22,7 @@ pub fn membership_service_contract() -> CommerceServiceContract {
             "memberships.members.status.update",
             "memberships.team.seats.create",
             "memberships.team.seats.delete",
+            "memberships.team.seats.reconcile",
             "memberships.team.seats.policy.update",
         ],
         vec![

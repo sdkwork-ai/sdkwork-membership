@@ -17,6 +17,24 @@ pub fn normalize_optional_text(value: Option<String>) -> Option<String> {
     value.map(|v| v.trim().to_owned()).filter(|v| !v.is_empty())
 }
 
+/// Escape the `LIKE`/`ILIKE` metacharacters in a user-supplied search term.
+///
+/// PostgreSQL gives `%`, `_`, and the escape character itself pattern meaning,
+/// so a raw `q` value would widen the filter into a wildcard query (`%` matches
+/// every row, `_` silently matches any character). Callers build
+/// `%escaped%` from this value and declare `ESCAPE '\'` on the predicate, so a
+/// literal `%` or `_` in a subscription id or plan name still matches itself.
+pub fn escape_like_pattern(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
 /// Current UTC timestamp formatted as `%Y-%m-%d %H:%M:%S`. Shared by app and admin routers.
 pub fn current_timestamp_string() -> String {
     format_unix_timestamp(Utc::now().timestamp())

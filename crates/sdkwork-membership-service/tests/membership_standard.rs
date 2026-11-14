@@ -394,6 +394,7 @@ fn membership_service_contract_exposes_membership_package_catalog_operations() {
         "memberships.team.seats.create",
         "memberships.team.seats.delete",
         "memberships.team.seats.policy.update",
+        "memberships.team.seats.reconcile",
     ] {
         assert!(
             contract.write_commands.contains(&command),
