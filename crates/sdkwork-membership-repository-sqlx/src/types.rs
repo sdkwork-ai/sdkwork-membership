@@ -266,6 +266,12 @@ pub struct AppMembershipStatusResponse {
 pub struct AppMembershipPackageItem {
     #[serde(with = "sdkwork_utils_rust::serde_int64")]
     pub id: i64,
+    /// Catalog package group this package belongs to, as served by
+    /// `AppMembershipPackageGroupItem.id` (the group's external id).
+    ///
+    /// Hosts use it to pick the package that belongs to the billing-cycle group
+    /// the buyer selected, instead of inferring the cycle from `recurrence_cycle`.
+    pub package_group_id: String,
     /// Catalog classification of this package (`token` | `community`),
     /// snapshotted from its package group.
     pub category: String,

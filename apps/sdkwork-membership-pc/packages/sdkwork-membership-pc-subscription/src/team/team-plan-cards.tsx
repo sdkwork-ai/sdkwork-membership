@@ -4,6 +4,7 @@ import { Button, EmptyState, LoadingBlock, StatusNotice } from "@sdkwork/ui-pc-r
 
 import { resolveTeamPlanErrorCopy } from "./team-plan-error-copy";
 import {
+  buildTeamCycleOptions,
   clampTeamSeatCount,
   computeTeamSeatTotal,
   formatTeamCnyAmount,
@@ -15,11 +16,13 @@ import {
   resolveTeamSeatBounds,
   selectTeamPlanPackage,
   type SdkworkTeamBillingCycle,
+  type SdkworkTeamCycleOption,
   type SdkworkTeamSeatBounds,
 } from "./team-plan-pricing";
 import {
   normalizeSdkworkTeamError,
   type SdkworkTeamPackage,
+  type SdkworkTeamPackageGroup,
   type SdkworkTeamSubscriptionError,
 } from "./team-subscription-port";
 import {
@@ -61,14 +64,47 @@ export interface SdkworkTeamPlanCardsProps {
   onCancel?: () => void;
 }
 
-const BILLING_CYCLES: readonly SdkworkTeamBillingCycle[] = ["month", "year"];
+/** Fallback tab label per billing cycle when the catalog serves no groups. */
+const CYCLE_COPY: Record<SdkworkTeamBillingCycle, { fallback: string; key: string }> = {
+  month: { fallback: "连续包月", key: "token_plan.team.billing_monthly" },
+  once: { fallback: "单月购买", key: "token_plan.team.billing_single" },
+  quarter: { fallback: "连续包季", key: "token_plan.team.billing_quarterly" },
+  year: { fallback: "连续包年", key: "token_plan.team.billing_annual" },
+};
+
+/** Period suffix rendered after the per-seat unit price. */
+const CYCLE_PERIOD_COPY: Record<SdkworkTeamBillingCycle, { fallback: string; key: string }> = {
+  month: { fallback: "/ 月", key: "token_plan.team.per_period_month" },
+  once: { fallback: "/ 单月", key: "token_plan.team.per_period_once" },
+  quarter: { fallback: "/ 季", key: "token_plan.team.per_period_quarter" },
+  year: { fallback: "/ 年", key: "token_plan.team.per_period_year" },
+};
+
+/** Explains the billing behavior of the active cycle under the tabs. */
+const CYCLE_HINT_COPY: Partial<Record<SdkworkTeamBillingCycle, { fallback: string; key: string }>> = {
+  once: {
+    fallback: "单月购买一次性付费，不自动续费。",
+    key: "token_plan.team.billing_single_hint",
+  },
+  quarter: {
+    fallback: "按季付费，每 90 天自动续费。",
+    key: "token_plan.team.billing_quarterly_hint",
+  },
+  year: { fallback: "按年付费立省约 17%。", key: "token_plan.team.billing_annual_hint" },
+};
 
 /**
  * Team plan cards: one column per catalog plan, priced per seat.
  *
- * The catalog is grouped by `planId`; each plan sells a monthly and/or annual
- * package (`recurrenceCycle`). The card owns the seat stepper, the computed
- * total, and the checkout hand-off; the container owns the payment dialog.
+ * The membership catalog publishes four billing options per plan as package
+ * groups (continuous annual / monthly / quarterly and a single-month purchase);
+ * each group becomes one cycle tab, in the order the catalog returned them, and
+ * the active tab's package group selects the package each plan card prices. A
+ * host that cannot read groups still gets four tabs derived from the package
+ * `recurrenceCycle`.
+ *
+ * The card owns the seat stepper, the computed total, and the checkout hand-off;
+ * the container owns the payment dialog.
  */
 export function SdkworkTeamPlanCards({
   initialSeats,
@@ -79,10 +115,11 @@ export function SdkworkTeamPlanCards({
   const { port } = useSdkworkTeamSurfaceRuntime();
   const copy = useSdkworkTeamTranslate();
   const [packages, setPackages] = useState<readonly SdkworkTeamPackage[]>([]);
+  const [packageGroups, setPackageGroups] = useState<readonly SdkworkTeamPackageGroup[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<SdkworkTeamSubscriptionError | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
-  const [billingCycle, setBillingCycle] = useState<SdkworkTeamBillingCycle>("month");
+  const [activeCycleKey, setActiveCycleKey] = useState<string | null>(null);
   const [seatDrafts, setSeatDrafts] = useState<Record<string, string>>({});
   const [purchasingPackageId, setPurchasingPackageId] = useState<string | null>(null);
   const [checkoutError, setCheckoutError] = useState<SdkworkTeamSubscriptionError | null>(null);
@@ -92,10 +129,17 @@ export function SdkworkTeamPlanCards({
     setIsLoading(true);
     setLoadError(null);
 
-    void port.listPackages()
-      .then((items) => {
+    // Packages are the saleable rows; groups only name the billing options. A
+    // membership deployment that does not serve groups yet must not fail the
+    // whole surface, so the group read degrades to the recurrence fallback.
+    void Promise.all([
+      port.listPackages(),
+      port.listPackageGroups().catch((): readonly SdkworkTeamPackageGroup[] => []),
+    ])
+      .then(([items, groups]) => {
         if (active) {
           setPackages(items);
+          setPackageGroups(groups);
         }
       })
       .catch((error: unknown) => {
@@ -114,7 +158,23 @@ export function SdkworkTeamPlanCards({
     };
   }, [port, reloadToken]);
 
-  const groups = groupTeamPlanPackages(packages);
+  const plans = groupTeamPlanPackages(packages);
+  const cycleOptions = buildTeamCycleOptions(
+    packages,
+    packageGroups,
+    (cycle) => copy(CYCLE_COPY[cycle].key, CYCLE_COPY[cycle].fallback),
+  );
+  const activeOption = cycleOptions.find((option) => option.key === activeCycleKey)
+    ?? cycleOptions[0]
+    ?? null;
+
+  function resolveCyclePeriodLabel(option: SdkworkTeamCycleOption | null): string {
+    const cycle = option?.billingCycle;
+    if (cycle && CYCLE_PERIOD_COPY[cycle]) {
+      return copy(CYCLE_PERIOD_COPY[cycle].key, CYCLE_PERIOD_COPY[cycle].fallback);
+    }
+    return copy("token_plan.team.per_period_month", "/ 月");
+  }
 
   function setSeatDraft(groupKey: string, value: string): void {
     setSeatDrafts((current) => ({ ...current, [groupKey]: value }));
@@ -164,26 +224,34 @@ export function SdkworkTeamPlanCards({
           ) : null}
           <div
             aria-label={copy("token_plan.team.period", "计费周期")}
-            className="inline-flex rounded-md border border-slate-200 bg-slate-100 p-0.5 dark:border-white/10 dark:bg-white/5"
+            className="inline-flex flex-wrap gap-0.5 rounded-md border border-slate-200 bg-slate-100 p-0.5 dark:border-white/10 dark:bg-white/5"
+            data-team-cycle-tabs
             role="group"
           >
-            {BILLING_CYCLES.map((cycle) => {
-              const isActive = cycle === billingCycle;
+            {cycleOptions.map((option) => {
+              const isActive = option.key === activeOption?.key;
               return (
                 <button
                   aria-pressed={isActive}
-                  className={`min-h-9 rounded-[0.3rem] px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  className={`inline-flex min-h-9 items-center gap-1 rounded-[0.3rem] px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                     isActive
                       ? "bg-white text-slate-950 shadow-sm dark:bg-slate-800 dark:text-white"
                       : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
                   }`}
-                  key={cycle}
-                  onClick={() => { setBillingCycle(cycle) }}
+                  data-team-cycle-tab={option.key}
+                  key={option.key}
+                  onClick={() => { setActiveCycleKey(option.key) }}
                   type="button"
                 >
-                  {cycle === "year"
-                    ? copy("token_plan.team.billing_annual", "按年")
-                    : copy("token_plan.team.billing_monthly", "按月")}
+                  <span className="whitespace-nowrap" data-team-cycle-tab-label>
+                    {option.label}
+                  </span>
+                  {option.description ? (
+                    <span className="whitespace-nowrap text-[0.75rem] font-bold opacity-70">
+                      {" "}
+                      {option.description}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -191,9 +259,15 @@ export function SdkworkTeamPlanCards({
         </div>
       </div>
 
-      {billingCycle === "year" ? (
-        <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          {copy("token_plan.team.billing_annual_hint", "按年付费立省约 17%。")}
+      {activeOption?.billingCycle && CYCLE_HINT_COPY[activeOption.billingCycle] ? (
+        <p
+          className="text-xs font-medium text-emerald-600 dark:text-emerald-400"
+          data-team-cycle-hint={activeOption.billingCycle}
+        >
+          {copy(
+            CYCLE_HINT_COPY[activeOption.billingCycle]!.key,
+            CYCLE_HINT_COPY[activeOption.billingCycle]!.fallback,
+          )}
         </p>
       ) : null}
 
@@ -239,14 +313,14 @@ export function SdkworkTeamPlanCards({
         </StatusNotice>
       ) : null}
 
-      {!isLoading && !loadError && groups.length === 0 ? (
+      {!isLoading && !loadError && plans.length === 0 ? (
         <EmptyState description={copy("token_plan.team.empty_packages", "暂无团队订阅套餐。")} />
       ) : null}
 
-      {!isLoading && !loadError && groups.length > 0 ? (
+      {!isLoading && !loadError && plans.length > 0 ? (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-          {groups.map((group) => {
-            const activePackage = selectTeamPlanPackage(group, billingCycle);
+          {plans.map((group) => {
+            const activePackage = selectTeamPlanPackage(group, activeOption);
             if (!activePackage) {
               return null;
             }
@@ -272,9 +346,7 @@ export function SdkworkTeamPlanCards({
             const originalPrice = activePackage.originalPrice
               ? formatTeamCnyAmount(Number(activePackage.originalPrice))
               : null;
-            const periodLabel = activePackage.recurrenceCycle === "year"
-              ? copy("token_plan.team.per_period_year", "/ 年")
-              : copy("token_plan.team.per_period_month", "/ 月");
+            const periodLabel = resolveCyclePeriodLabel(activeOption);
 
             return (
               <article

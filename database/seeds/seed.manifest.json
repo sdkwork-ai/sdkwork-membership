@@ -21,7 +21,7 @@
     "zh-CN": {
       "version": "1.0.0",
       "required": true,
-      "checksum": "sha256:57dd83cf88db36e1639c5cba45b9da46fa4d068bf0c5d47cc034f0d632135a60",
+      "checksum": "sha256:77eb3ce73a807229b4f92b1ba56bf0c0666f61e4f1aa3307cc13b701ca3bc327",
       "files": [
         "locales/zh-CN/001_catalog_locale.sql"
       ]
@@ -29,7 +29,7 @@
     "en-US": {
       "version": "1.0.0",
       "required": true,
-      "checksum": "sha256:e3b03be33dee743f38b5fe1a2f0f321aea36e951a3362ec1bc3fe4e1c7cf9053",
+      "checksum": "sha256:b616a84fc1991cb5490bd2a9c4ec3c4a11394f1c421f9b2c9b5657b22fd8b938",
       "files": [
         "locales/en-US/001_catalog_locale.sql"
       ]

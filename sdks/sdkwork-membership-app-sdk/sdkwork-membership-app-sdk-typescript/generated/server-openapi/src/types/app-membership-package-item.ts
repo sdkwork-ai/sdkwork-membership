@@ -5,6 +5,8 @@ import type { MembershipPriceUnit } from './membership-price-unit';
 /** Membership package item. */
 export interface AppMembershipPackageItem {
   id: string;
+  /** Catalog package group this package belongs to, as served by `AppMembershipPackageGroupItem.id` (the group's external id). Hosts use it to pick the package that belongs to the billing-cycle group the buyer selected. */
+  packageGroupId: string;
   name: string;
   description?: string;
   price: string;

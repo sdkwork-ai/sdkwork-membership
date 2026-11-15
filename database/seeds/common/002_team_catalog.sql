@@ -1,5 +1,10 @@
 -- Membership team (organization) subscription catalog seed for tenant 100001.
 --
+-- Four billing options per team plan, mirroring the personal token catalog:
+-- continuous annual (year / 365d), continuous monthly (month / 30d),
+-- continuous quarterly (quarter / 90d), and a single-month purchase (once / 30d)
+-- - 4 groups x 3 plans (starter / growth / scale) = 12 sellable packages.
+--
 -- Team plans are per-seat: membership_package.price_unit = 'seat' means
 -- price_amount is the unit price of one seat for one billing period, and the
 -- checkout total is unit price x selected seats. seat_min/seat_max bound the
@@ -43,8 +48,10 @@ ON CONFLICT (id) DO UPDATE SET
 INSERT INTO membership_package_group (
   id, tenant_id, organization_id, category, audience, external_id, group_no, name, description, billing_cycle, duration_days, display_channel, sort_weight, status, created_at, updated_at
 ) VALUES
-  ('package-group-team-annual', '100001', '0', 'token', 'team', 601, 'team-annual', 'Team annual', 'Pay yearly, save about 17%.', 'year', 365, 'all', 1, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-  ('package-group-team-monthly', '100001', '0', 'token', 'team', 602, 'team-monthly', 'Team monthly', 'Monthly billing, cancel anytime.', 'month', 30, 'all', 2, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  ('package-group-team-annual', '100001', '0', 'token', 'team', 601, 'team-annual', 'Team annual', 'Save about 16%', 'year', 365, 'all', 1, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-group-team-monthly', '100001', '0', 'token', 'team', 602, 'team-monthly', 'Team monthly', 'Cancel anytime', 'month', 30, 'all', 2, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-group-team-quarterly', '100001', '0', 'token', 'team', 603, 'team-quarterly', 'Team quarterly', 'Auto-renews quarterly', 'quarter', 90, 'all', 3, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-group-team-single', '100001', '0', 'token', 'team', 604, 'team-single', 'Team single month', NULL, 'once', 30, 'all', 4, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,
@@ -80,7 +87,25 @@ INSERT INTO membership_package (
    0, 30, 'month', 13, 0, 'active', '["team","seat","monthly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-scale-annual', '100001', '0', 'token', 'team', 616, 'team-scale-annual', 'package-group-team-annual', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-annual',
    'Team Scale - annual', 'Per seat, billed yearly.', '3999', '5988', 'CNY', 'seat', 5, 1000, 30000,
-   0, 365, 'year', 13, 0, 'active', '["team","seat","annual"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+   0, 365, 'year', 13, 0, 'active', '["team","seat","annual"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-starter-quarterly', '100001', '0', 'token', 'team', 617, 'team-starter-quarterly', 'package-group-team-quarterly', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-quarterly',
+   'Team Starter - quarterly', 'Per seat, billed quarterly.', '291', '297', 'CNY', 'seat', 3, 200, 5000,
+   0, 90, 'quarter', 11, 0, 'active', '["team","seat","quarterly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-growth-quarterly', '100001', '0', 'token', 'team', 618, 'team-growth-quarterly', 'package-group-team-quarterly', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-quarterly',
+   'Team Growth - quarterly', 'Per seat, billed quarterly.', '585', '597', 'CNY', 'seat', 3, 500, 12000,
+   0, 90, 'quarter', 12, 1, 'active', '["team","seat","quarterly","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-scale-quarterly', '100001', '0', 'token', 'team', 619, 'team-scale-quarterly', 'package-group-team-quarterly', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-quarterly',
+   'Team Scale - quarterly', 'Per seat, billed quarterly.', '1173', '1197', 'CNY', 'seat', 5, 1000, 30000,
+   0, 90, 'quarter', 13, 0, 'active', '["team","seat","quarterly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-starter-single', '100001', '0', 'token', 'team', 620, 'team-starter-single', 'package-group-team-single', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-single',
+   'Team Starter - single month', 'Per seat, one month, no auto-renewal.', '109', '119', 'CNY', 'seat', 3, 200, 5000,
+   0, 30, 'once', 11, 0, 'active', '["team","seat","single"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-growth-single', '100001', '0', 'token', 'team', 621, 'team-growth-single', 'package-group-team-single', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-single',
+   'Team Growth - single month', 'Per seat, one month, no auto-renewal.', '219', '239', 'CNY', 'seat', 3, 500, 12000,
+   0, 30, 'once', 12, 1, 'active', '["team","seat","single","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+  ('package-team-scale-single', '100001', '0', 'token', 'team', 622, 'team-scale-single', 'package-group-team-single', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-single',
+   'Team Scale - single month', 'Per seat, one month, no auto-renewal.', '439', '459', 'CNY', 'seat', 5, 1000, 30000,
+   0, 30, 'once', 13, 0, 'active', '["team","seat","single"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,

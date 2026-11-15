@@ -106,6 +106,14 @@ export interface SdkworkTeamSeatReconciliationResult {
 export interface SdkworkTeamPackage {
   /** Catalog package id carried as an int64 decimal string. */
   readonly id: string;
+  /**
+   * Catalog package group this package belongs to, as served by
+   * {@link SdkworkTeamPackageGroup.id}.
+   *
+   * The billing-cycle tabs select the package of the chosen group through this
+   * id, so a host never has to infer the cycle from `recurrenceCycle`.
+   */
+  readonly packageGroupId?: string;
   readonly name: string;
   readonly planId: string;
   readonly planName?: string;
@@ -121,6 +129,29 @@ export interface SdkworkTeamPackage {
   readonly seatPointsAmount: string;
   readonly recommended: boolean;
   readonly sortWeight: string;
+}
+
+/**
+ * One billing-cycle group of organization (team) packages
+ * (`GET /memberships/package_groups?audience=team`).
+ *
+ * The team plan cards render one cycle tab per group, in the order the
+ * membership catalog returns them (annual, monthly, quarterly, single month),
+ * and label it with `name` plus `description` — the same contract the personal
+ * catalog renders (`连续包年 9.7折`).
+ */
+export interface SdkworkTeamPackageGroup {
+  /** Catalog group id carried as an int64 decimal string. */
+  readonly id: string;
+  readonly name: string;
+  /** Discount / billing description shown next to the group name. */
+  readonly description?: string;
+  /** Group billing cycle (`once` | `day` | `week` | `month` | `quarter` | `year`). */
+  readonly billingCycle?: string | null;
+  /** Billing duration in days for this group, as a decimal string. */
+  readonly durationDays?: string;
+  /** Packages that belong to this group. */
+  readonly packages: readonly SdkworkTeamPackage[];
 }
 
 /** One organization roster row as IAM publishes it. */
@@ -219,6 +250,15 @@ export interface SdkworkTeamSubscriptionPort {
   listOwnMemberships(): Promise<readonly SdkworkTeamOwnMembership[]>;
   /** Every active organization (team) token package in the catalog. */
   listPackages(): Promise<readonly SdkworkTeamPackage[]>;
+  /**
+   * Every active organization (team) billing-cycle group, with its packages.
+   *
+   * The groups drive the four cycle tabs of the team plan cards (continuous
+   * annual / monthly / quarterly and the single-month purchase). A host that
+   * cannot read the group endpoint returns an empty list; the cards then fall
+   * back to grouping packages by `recurrenceCycle`.
+   */
+  listPackageGroups(): Promise<readonly SdkworkTeamPackageGroup[]>;
   /**
    * Display name of the organization, when the caller may read it.
    *

@@ -13,6 +13,7 @@ import {
   type SdkworkTeamSeatAssignment,
 } from "../src";
 import {
+  buildTeamCycleOptions,
   computeTeamSeatTotal,
   groupTeamPlanPackages,
   resolveAdditionalSeatBounds,
@@ -131,11 +132,67 @@ describe("shared team plan pricing", () => {
   ];
 
   it("groups monthly and annual variants under one plan and selects by cycle", () => {
-    const groups = groupTeamPlanPackages(packages);
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.planName).toBe("Team Pro");
-    expect(selectTeamPlanPackage(groups[0]!, "month")?.id).toBe("42");
-    expect(selectTeamPlanPackage(groups[0]!, "year")?.id).toBe("43");
+    const plans = groupTeamPlanPackages(packages);
+    expect(plans).toHaveLength(1);
+    expect(plans[0]?.planName).toBe("Team Pro");
+    // No package group is served: the tabs fall back to the recurrence cycle.
+    const options = buildTeamCycleOptions(packages, [], (cycle) => cycle);
+    expect(options.map((option) => option.billingCycle)).toEqual(["year", "month"]);
+    expect(selectTeamPlanPackage(plans[0]!, options[1]!)?.id).toBe("42");
+    expect(selectTeamPlanPackage(plans[0]!, options[0]!)?.id).toBe("43");
+  });
+
+  it("builds one tab per package group and selects the group's own package", () => {
+    const grouped = [
+      { ...packages[0]!, id: "611", packageGroupId: "602" },
+      { ...packages[1]!, id: "612", recurrenceCycle: "year", packageGroupId: "601" },
+      { ...packages[0]!, id: "617", recurrenceCycle: "quarter", packageGroupId: "603" },
+      { ...packages[0]!, id: "620", recurrenceCycle: "once", packageGroupId: "604" },
+    ];
+    const groups = [
+      {
+        billingCycle: "year",
+        description: "9.7折",
+        durationDays: "365",
+        id: "601",
+        name: "连续包年",
+        packages: [grouped[1]!],
+      },
+      {
+        billingCycle: "month",
+        description: "9.9折",
+        durationDays: "30",
+        id: "602",
+        name: "连续包月",
+        packages: [grouped[0]!],
+      },
+      {
+        billingCycle: "quarter",
+        description: "9.8折",
+        durationDays: "90",
+        id: "603",
+        name: "连续包季",
+        packages: [grouped[2]!],
+      },
+      { billingCycle: "once", durationDays: "30", id: "604", name: "单月购买", packages: [grouped[3]!] },
+    ];
+
+    const options = buildTeamCycleOptions(grouped, groups, (cycle) => cycle);
+    expect(options.map((option) => option.key)).toEqual(["601", "602", "603", "604"]);
+    expect(options.map((option) => option.label)).toEqual([
+      "连续包年",
+      "连续包月",
+      "连续包季",
+      "单月购买",
+    ]);
+    expect(options[0]?.description).toBe("9.7折");
+    expect(options[0]?.durationDays).toBe(365);
+
+    const plans = groupTeamPlanPackages(grouped);
+    expect(plans).toHaveLength(1);
+    for (const option of options) {
+      expect(selectTeamPlanPackage(plans[0]!, option)?.packageGroupId).toBe(option.groupId);
+    }
   });
 
   it("prices a seat total and keeps the expand stepper counting added seats", () => {

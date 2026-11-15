@@ -20,7 +20,7 @@ use crate::response::{
     finish_api_created, finish_api_json, finish_api_no_content, item_envelope, ApiProblem,
     ApiResult,
 };
-use crate::subject::numeric_runtime_subject_from_context;
+use crate::subject::{numeric_runtime_subject_from_context, public_tenant_id};
 use sdkwork_contract_service::CommerceServiceError;
 use sdkwork_membership_repository_sqlx::shared::{
     current_timestamp_string, normalize_optional_text,
@@ -396,7 +396,7 @@ async fn fetch_plans(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
@@ -407,7 +407,7 @@ async fn fetch_plans(
             )?;
             let data = state
                 .store
-                .load_plans(catalog_subject, list_query)
+                .load_plans(Some(catalog_subject), list_query)
                 .await
                 .map_err(|e| {
                     ApiProblem::from_service("membership plans read model is unavailable", e)
@@ -452,7 +452,7 @@ async fn fetch_package_groups(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
@@ -464,7 +464,7 @@ async fn fetch_package_groups(
             let data = state
                 .store
                 .load_package_groups(
-                    catalog_subject,
+                    Some(catalog_subject),
                     query.plan_id,
                     query.recommended_only.unwrap_or(false),
                     list_query,
@@ -491,11 +491,11 @@ async fn fetch_package_group(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let item = state
                 .store
-                .load_package_group(catalog_subject, package_group_id, audience)
+                .load_package_group(Some(catalog_subject), package_group_id, audience)
                 .await
                 .map_err(|e| {
                     ApiProblem::from_service(
@@ -519,7 +519,7 @@ async fn fetch_package_group_packages(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
@@ -531,7 +531,7 @@ async fn fetch_package_group_packages(
             let data = state
                 .store
                 .load_packages(
-                    catalog_subject,
+                    Some(catalog_subject),
                     Some(package_group_id),
                     query.plan_id,
                     list_query,
@@ -554,7 +554,7 @@ async fn fetch_packages(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let list_query = list_query_with_category(
                 query.category,
@@ -566,7 +566,7 @@ async fn fetch_packages(
             let data = state
                 .store
                 .load_packages(
-                    catalog_subject,
+                    Some(catalog_subject),
                     query.package_group_id,
                     query.plan_id,
                     list_query,
@@ -590,11 +590,11 @@ async fn fetch_package(
     finish_api_json(
         &ctx,
         async {
-            let catalog_subject = resolve_optional_membership_subject(&ctx);
+            let catalog_subject = resolve_catalog_subject(&ctx)?;
             let audience = resolve_catalog_audience(query.audience)?;
             let item = state
                 .store
-                .load_package(catalog_subject, package_id, audience)
+                .load_package(Some(catalog_subject), package_id, audience)
                 .await
                 .map_err(|e| {
                     ApiProblem::from_service("membership package read model is unavailable", e)
@@ -867,13 +867,30 @@ fn resolve_membership_subject(
     }
 }
 
-/// Resolve the subject for **catalog read** endpoints (plans, benefits,
-/// packages, package_groups).  These endpoints serve public catalog data
-/// that must be visible to anonymous visitors browsing the token-plan
-/// page.  When no session is present, they return `None` instead of a 401
-/// so the store can serve public rows.
+/// Resolve the subject for **public catalog** endpoints (the anonymous
+/// `benefits` listing). These endpoints serve public catalog data that must be
+/// visible to anonymous visitors browsing the token-plan page.  When no session
+/// is present, they return `None` instead of a 401 so the store can serve
+/// public rows.
 fn resolve_optional_membership_subject(ctx: &WebRequestContext) -> Option<AppMembershipSubject> {
     app_membership_subject_from_context(ctx).ok()
+}
+
+/// Resolve the subject for **optional-credential catalog reads** (plans,
+/// packages, package_groups): these routes are `dual-token-or-anonymous`, so a
+/// signed-in principal keeps its own tenant while an anonymous visitor falls
+/// back to the platform public tenant. `user_id` is `0` — catalog scope only
+/// ever reads the tenant/organization pair. A resolved-but-invalid principal
+/// still fails closed.
+fn resolve_catalog_subject(ctx: &WebRequestContext) -> Result<AppMembershipSubject, ApiProblem> {
+    if ctx.principal().is_none() {
+        return Ok(AppMembershipSubject {
+            tenant_id: public_tenant_id(),
+            organization_id: 0,
+            user_id: 0,
+        });
+    }
+    app_membership_subject_from_context(ctx)
 }
 
 fn resolve_required_membership_subject(

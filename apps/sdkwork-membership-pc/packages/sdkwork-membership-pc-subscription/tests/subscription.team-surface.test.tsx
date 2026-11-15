@@ -128,6 +128,7 @@ function createFakePort(options: FakePortOptions) {
       status: "active",
     }]),
     listPackages: vi.fn(async () => [TEAM_PACKAGE]),
+    listPackageGroups: vi.fn(async () => []),
     listRosterPage: vi.fn(async () => options.roster ?? {
       hasMore: false,
       items: [],

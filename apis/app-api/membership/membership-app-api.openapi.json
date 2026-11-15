@@ -521,7 +521,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -529,7 +534,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/package_groups": {
@@ -702,7 +707,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -710,7 +720,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/package_groups/{packageGroupId}": {
@@ -823,7 +833,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -831,7 +846,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/package_groups/{packageGroupId}/packages": {
@@ -1004,7 +1019,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -1012,7 +1032,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/packages": {
@@ -1187,7 +1207,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -1195,7 +1220,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/packages/{packageId}": {
@@ -1308,7 +1333,12 @@
             }
           }
         },
-        "security": [],
+        "security": [
+          {
+            "AuthToken": [],
+            "AccessToken": []
+          }
+        ],
         "x-sdkwork-owner": "sdkwork-membership",
         "x-sdkwork-api-authority": "sdkwork-membership-app-api",
         "x-sdkwork-domain": "commerce",
@@ -1316,7 +1346,7 @@
         "x-sdkwork-request-context": "WebRequestContext",
         "x-sdkwork-api-surface": "app-api",
         "x-sdkwork-server-request-id": true,
-        "x-sdkwork-auth-mode": "anonymous"
+        "x-sdkwork-auth-mode": "dual-token-or-anonymous"
       }
     },
     "/app/v3/api/memberships/purchases": {
@@ -3774,6 +3804,7 @@
         "required": [
           "category",
           "id",
+          "packageGroupId",
           "name",
           "price",
           "audience",
@@ -3796,6 +3827,10 @@
             "format": "int64",
             "pattern": "^-?[0-9]+$",
             "x-sdkwork-int64-string": true
+          },
+          "packageGroupId": {
+            "type": "string",
+            "description": "Catalog package group this package belongs to, as served by `AppMembershipPackageGroupItem.id` (the group's external id). Hosts use it to pick the package that belongs to the billing-cycle group the buyer selected."
           },
           "name": {
             "type": "string"
