@@ -1,4 +1,5 @@
 import {
+  cleanup,
   fireEvent,
   render,
   screen,
@@ -63,6 +64,13 @@ function CheckoutModalStub({ isOpen }: SdkworkSubscriptionCatalogModalProps) {
 
 function PointsModalStub({ isOpen }: SdkworkSubscriptionCatalogModalProps) {
   return isOpen ? <div data-testid="points-modal-open" /> : null;
+}
+
+function PointsBalanceModalStub({
+  currentPoints,
+  isOpen,
+}: SdkworkSubscriptionCatalogModalProps) {
+  return isOpen ? <div data-testid="points-modal-open">{String(currentPoints)}</div> : null;
 }
 
 function renderCatalogPage() {
@@ -142,6 +150,132 @@ describe("sdkwork-membership-pc-subscription catalog interactions", () => {
     expect(screen.queryByTestId("points-modal-open")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /购买算力积分/ }));
     expect(screen.getByTestId("points-modal-open")).toBeTruthy();
+  });
+
+  it("hands the host-supplied points balance to both points dialogs", async () => {
+    configureSdkworkMembershipSessionTokenProvider(() => ({
+      accessToken: "test-access-token",
+      authToken: "test-auth-token",
+    }));
+    const controller = createSdkworkSubscriptionCatalogController({
+      service: {
+        getCatalog: async () => buildCatalog(),
+      },
+    });
+
+    render(
+      <SdkworkThemeProvider defaultTheme="light">
+        <SdkworkSubscriptionCatalogPage
+          catalogController={controller}
+          components={{
+            checkoutModal: CheckoutModalStub as never,
+            pointsDetailsModal: PointsBalanceModalStub as never,
+            pointsPurchaseModal: PointsBalanceModalStub as never,
+            redeemModal: PointsModalStub as never,
+          }}
+          currentPoints={42.5}
+        />
+      </SdkworkThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expectPlanName("基础会员(月)");
+    });
+
+    // The details dialog used to render 0 because the page never forwarded the
+    // balance; opening both dialogs must expose the same Token Bank figure.
+    fireEvent.click(screen.getByRole("button", { name: "算力积分详情" }));
+    fireEvent.click(screen.getByRole("button", { name: /购买算力积分/ }));
+
+    const openDialogs = screen.getAllByTestId("points-modal-open");
+    expect(openDialogs).toHaveLength(2);
+    for (const dialog of openDialogs) {
+      expect(dialog.textContent).toBe("42.5");
+    }
+    cleanup();
+  });
+
+  it("falls back to the host member summary point balance for both points dialogs", async () => {
+    configureSdkworkMembershipSessionTokenProvider(() => ({
+      accessToken: "test-access-token",
+      authToken: "test-auth-token",
+    }));
+    const controller = createSdkworkSubscriptionCatalogController({
+      service: {
+        getCatalog: async () => buildCatalog(),
+      },
+    });
+
+    render(
+      <SdkworkThemeProvider defaultTheme="light">
+        <SdkworkSubscriptionCatalogPage
+          catalogController={controller}
+          components={{
+            checkoutModal: CheckoutModalStub as never,
+            pointsDetailsModal: PointsBalanceModalStub as never,
+            pointsPurchaseModal: PointsBalanceModalStub as never,
+            redeemModal: PointsModalStub as never,
+          }}
+          memberSummary={{ membershipTierKey: "none", pointBalance: 7.25 }}
+        />
+      </SdkworkThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expectPlanName("基础会员(月)");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "算力积分详情" }));
+    fireEvent.click(screen.getByRole("button", { name: /购买算力积分/ }));
+
+    const openDialogs = screen.getAllByTestId("points-modal-open");
+    expect(openDialogs).toHaveLength(2);
+    for (const dialog of openDialogs) {
+      expect(dialog.textContent).toBe("7.25");
+    }
+    cleanup();
+  });
+
+  it("keeps an explicit empty balance instead of falling back to the member summary", async () => {
+    configureSdkworkMembershipSessionTokenProvider(() => ({
+      accessToken: "test-access-token",
+      authToken: "test-auth-token",
+    }));
+    const controller = createSdkworkSubscriptionCatalogController({
+      service: {
+        getCatalog: async () => buildCatalog(),
+      },
+    });
+
+    render(
+      <SdkworkThemeProvider defaultTheme="light">
+        <SdkworkSubscriptionCatalogPage
+          catalogController={controller}
+          components={{
+            checkoutModal: CheckoutModalStub as never,
+            pointsDetailsModal: PointsBalanceModalStub as never,
+            pointsPurchaseModal: PointsBalanceModalStub as never,
+            redeemModal: PointsModalStub as never,
+          }}
+          currentPoints={null}
+          memberSummary={{ membershipTierKey: "none", pointBalance: 7.25 }}
+        />
+      </SdkworkThemeProvider>,
+    );
+
+    await waitFor(() => {
+      expectPlanName("基础会员(月)");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "算力积分详情" }));
+    fireEvent.click(screen.getByRole("button", { name: /购买算力积分/ }));
+
+    const openDialogs = screen.getAllByTestId("points-modal-open");
+    expect(openDialogs).toHaveLength(2);
+    for (const dialog of openDialogs) {
+      expect(dialog.textContent).toBe("null");
+    }
+    cleanup();
   });
 
   it("renders no plan cards when the selected billing cycle has no packages", async () => {
