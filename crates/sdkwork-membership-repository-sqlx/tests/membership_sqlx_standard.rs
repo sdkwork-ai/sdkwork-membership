@@ -272,8 +272,13 @@ fn team_seat_licensing_is_persisted_and_transactionally_guarded() {
         );
     }
 
-    // Team entitlement grants multiply the plan quantity by the seat count.
-    assert!(POSTGRES_SOURCE.contains("(benefit.usage_limit.unwrap_or(0).max(0) * seats)"));
+    // Team entitlement grants multiply the plan quantity by the seat count;
+    // subscription points are the package's per-seat amount × seats instead.
+    assert!(POSTGRES_SOURCE.contains("benefit.usage_limit.unwrap_or(0).max(0) * seats"));
+    assert!(POSTGRES_SOURCE.contains("package.item.seat_points_amount.max(0) * seats"));
+    assert!(POSTGRES_SOURCE.contains("SUBSCRIPTION_POINTS_BENEFIT_ID"));
+    assert!(POSTGRES_SOURCE
+        .contains("benefit_code.eq_ignore_ascii_case(SUBSCRIPTION_POINTS_BENEFIT_CODE)"));
 
     // Catalog audience filters on plan, package group, and package rows.
     assert!(POSTGRES_SOURCE.contains("AND ($4 IS NULL OR p.audience = $4)"));
@@ -329,6 +334,91 @@ fn team_seat_licensing_is_persisted_and_transactionally_guarded() {
     assert!(TEAM_SEED.contains("plan-team-starter"));
     assert!(TEAM_SEED.contains("'seat'"));
     assert!(TEAM_SEED.contains("seat_points_amount"));
+}
+
+/// Parses every `audience = 'team'` package tuple from the seed:
+/// `(package id, price, seat points)`.
+fn team_seed_package_rows() -> Vec<(String, i64, i64)> {
+    // Scope the scan to the `membership_package` INSERT: package-group rows also
+    // carry `package-` ids but never sell points.
+    let block = TEAM_SEED
+        .split("INSERT INTO membership_package (")
+        .nth(1)
+        .expect("team seed must insert membership packages")
+        .split("ON CONFLICT (id) DO UPDATE SET")
+        .next()
+        .unwrap_or_default();
+    let mut rows = Vec::new();
+    for chunk in block.split("('package-").skip(1) {
+        if !chunk.contains("', 'team', ") {
+            continue;
+        }
+        let id = chunk.split('\'').next().unwrap_or_default();
+        let tuple = chunk.split(')').next().unwrap_or_default();
+        let (before_currency, after_currency) = tuple
+            .split_once(", 'CNY', 'seat', ")
+            .expect("team package seed row must price per seat in CNY");
+        let price = before_currency
+            .rsplit(", '")
+            .nth(1)
+            .expect("team package seed row must carry price_amount")
+            .trim_end_matches('\'')
+            .trim()
+            .parse::<i64>()
+            .expect("team package price_amount must be a whole CNY amount");
+        let mut numbers = after_currency.split(',').map(str::trim);
+        let _seat_min = numbers.next();
+        let _seat_max = numbers.next();
+        let seat_points = numbers
+            .next()
+            .expect("team package seed row must carry seat_points_amount")
+            .parse::<i64>()
+            .expect("team package seat_points_amount must be an integer");
+        rows.push((format!("package-{id}"), price, seat_points));
+    }
+    rows
+}
+
+#[test]
+fn team_packages_grant_ten_points_per_cny_of_price() {
+    // Product ratio: ¥1 = 10 membership points. Every team package must credit
+    // `price_amount × 10` points per seat for its own billing period, otherwise
+    // the seed over-credits 5–7.5× and every team purchase loses money.
+    let rows = team_seed_package_rows();
+    assert_eq!(
+        rows.len(),
+        12,
+        "the team catalog sells 4 billing cycles × 3 plans",
+    );
+    for (package_id, price, seat_points) in &rows {
+        assert_eq!(
+            *seat_points,
+            *price * 10,
+            "{package_id}: seat_points_amount must be ten points per CNY of price_amount",
+        );
+    }
+    // Spot-check the per-period ladder so a wrong-but-consistent ratio (for
+    // example ×1) cannot satisfy the generic guard above.
+    for (package_id, expected) in [
+        ("package-team-starter-monthly", 990),
+        ("package-team-starter-annual", 9990),
+        ("package-team-starter-quarterly", 2910),
+        ("package-team-starter-single", 1090),
+        ("package-team-growth-monthly", 1990),
+        ("package-team-growth-annual", 19990),
+        ("package-team-growth-quarterly", 5850),
+        ("package-team-growth-single", 2190),
+        ("package-team-scale-monthly", 3990),
+        ("package-team-scale-annual", 39990),
+        ("package-team-scale-quarterly", 11730),
+        ("package-team-scale-single", 4390),
+    ] {
+        let row = rows
+            .iter()
+            .find(|(id, _, _)| id.as_str() == package_id)
+            .unwrap_or_else(|| panic!("missing team package {package_id}"));
+        assert_eq!(row.2, expected, "{package_id} seat_points_amount");
+    }
 }
 
 #[test]

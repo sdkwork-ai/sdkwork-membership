@@ -16,6 +16,12 @@
 --
 -- ON CONFLICT (id) DO UPDATE SET is used (not DO NOTHING) so re-seeding after
 -- seed corrections overwrites existing rows.
+--
+-- Display text (name/description/title) is intentionally NOT part of the
+-- conflict update set: it is owned by the locale overlay files
+-- (seeds/locales/<locale>/001_catalog_locale.sql). Re-running this base seed
+-- after a correction must never revert a localized team catalog back to the
+-- English fallback when the locale overlay is checksum-skipped.
 
 INSERT INTO membership_plan (
   id, tenant_id, organization_id, category, audience, plan_no, plan_code, name, rank, description, sort_weight, status, created_at, updated_at
@@ -26,9 +32,7 @@ INSERT INTO membership_plan (
 ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,
-  name = EXCLUDED.name,
   rank = EXCLUDED.rank,
-  description = EXCLUDED.description,
   sort_weight = EXCLUDED.sort_weight,
   status = EXCLUDED.status,
   updated_at = EXCLUDED.updated_at;
@@ -40,8 +44,6 @@ INSERT INTO membership_plan_version (
   ('plan-team-growth-v1', '100001', '0', 'plan-team-growth', 'v1', 'Team Growth', 'Higher pooled quota, shared agents and priority lanes for growing teams.', 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('plan-team-scale-v1', '100001', '0', 'plan-team-scale', 'v1', 'Team Scale', 'Maximum quota and dedicated capacity for large organizations.', 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
-  title = EXCLUDED.title,
-  description = EXCLUDED.description,
   lifecycle_status = EXCLUDED.lifecycle_status,
   updated_at = EXCLUDED.updated_at;
 
@@ -56,8 +58,6 @@ ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,
   external_id = EXCLUDED.external_id,
-  name = EXCLUDED.name,
-  description = EXCLUDED.description,
   billing_cycle = EXCLUDED.billing_cycle,
   duration_days = EXCLUDED.duration_days,
   display_channel = EXCLUDED.display_channel,
@@ -71,40 +71,40 @@ INSERT INTO membership_package (
   point_amount, duration_days, recurrence_cycle, sort_weight, recommended, status, tags, created_at, updated_at
 ) VALUES
   ('package-team-starter-monthly', '100001', '0', 'token', 'team', 611, 'team-starter-monthly', 'package-group-team-monthly', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-monthly',
-   'Team Starter - monthly', 'Per seat, billed monthly.', '99', '129', 'CNY', 'seat', 3, 200, 5000,
+   'Team Starter - monthly', 'Per seat, billed monthly.', '99', '129', 'CNY', 'seat', 3, 200, 990,
    0, 30, 'month', 11, 0, 'active', '["team","seat","monthly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-starter-annual', '100001', '0', 'token', 'team', 612, 'team-starter-annual', 'package-group-team-annual', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-annual',
-   'Team Starter - annual', 'Per seat, billed yearly.', '999', '1548', 'CNY', 'seat', 3, 200, 5000,
+   'Team Starter - annual', 'Per seat, billed yearly.', '999', '1548', 'CNY', 'seat', 3, 200, 9990,
    0, 365, 'year', 11, 0, 'active', '["team","seat","annual"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-growth-monthly', '100001', '0', 'token', 'team', 613, 'team-growth-monthly', 'package-group-team-monthly', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-monthly',
-   'Team Growth - monthly', 'Per seat, billed monthly.', '199', '259', 'CNY', 'seat', 3, 500, 12000,
+   'Team Growth - monthly', 'Per seat, billed monthly.', '199', '259', 'CNY', 'seat', 3, 500, 1990,
    0, 30, 'month', 12, 1, 'active', '["team","seat","monthly","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-growth-annual', '100001', '0', 'token', 'team', 614, 'team-growth-annual', 'package-group-team-annual', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-annual',
-   'Team Growth - annual', 'Per seat, billed yearly.', '1999', '3108', 'CNY', 'seat', 3, 500, 12000,
+   'Team Growth - annual', 'Per seat, billed yearly.', '1999', '3108', 'CNY', 'seat', 3, 500, 19990,
    0, 365, 'year', 12, 1, 'active', '["team","seat","annual","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-scale-monthly', '100001', '0', 'token', 'team', 615, 'team-scale-monthly', 'package-group-team-monthly', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-monthly',
-   'Team Scale - monthly', 'Per seat, billed monthly.', '399', '499', 'CNY', 'seat', 5, 1000, 30000,
+   'Team Scale - monthly', 'Per seat, billed monthly.', '399', '499', 'CNY', 'seat', 5, 1000, 3990,
    0, 30, 'month', 13, 0, 'active', '["team","seat","monthly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-scale-annual', '100001', '0', 'token', 'team', 616, 'team-scale-annual', 'package-group-team-annual', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-annual',
-   'Team Scale - annual', 'Per seat, billed yearly.', '3999', '5988', 'CNY', 'seat', 5, 1000, 30000,
+   'Team Scale - annual', 'Per seat, billed yearly.', '3999', '5988', 'CNY', 'seat', 5, 1000, 39990,
    0, 365, 'year', 13, 0, 'active', '["team","seat","annual"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-starter-quarterly', '100001', '0', 'token', 'team', 617, 'team-starter-quarterly', 'package-group-team-quarterly', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-quarterly',
-   'Team Starter - quarterly', 'Per seat, billed quarterly.', '291', '297', 'CNY', 'seat', 3, 200, 5000,
+   'Team Starter - quarterly', 'Per seat, billed quarterly.', '291', '297', 'CNY', 'seat', 3, 200, 2910,
    0, 90, 'quarter', 11, 0, 'active', '["team","seat","quarterly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-growth-quarterly', '100001', '0', 'token', 'team', 618, 'team-growth-quarterly', 'package-group-team-quarterly', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-quarterly',
-   'Team Growth - quarterly', 'Per seat, billed quarterly.', '585', '597', 'CNY', 'seat', 3, 500, 12000,
+   'Team Growth - quarterly', 'Per seat, billed quarterly.', '585', '597', 'CNY', 'seat', 3, 500, 5850,
    0, 90, 'quarter', 12, 1, 'active', '["team","seat","quarterly","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-scale-quarterly', '100001', '0', 'token', 'team', 619, 'team-scale-quarterly', 'package-group-team-quarterly', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-quarterly',
-   'Team Scale - quarterly', 'Per seat, billed quarterly.', '1173', '1197', 'CNY', 'seat', 5, 1000, 30000,
+   'Team Scale - quarterly', 'Per seat, billed quarterly.', '1173', '1197', 'CNY', 'seat', 5, 1000, 11730,
    0, 90, 'quarter', 13, 0, 'active', '["team","seat","quarterly"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-starter-single', '100001', '0', 'token', 'team', 620, 'team-starter-single', 'package-group-team-single', 'plan-team-starter', 'plan-team-starter-v1', 'sku-team-starter-single',
-   'Team Starter - single month', 'Per seat, one month, no auto-renewal.', '109', '119', 'CNY', 'seat', 3, 200, 5000,
+   'Team Starter - single month', 'Per seat, one month, no auto-renewal.', '109', '119', 'CNY', 'seat', 3, 200, 1090,
    0, 30, 'once', 11, 0, 'active', '["team","seat","single"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-growth-single', '100001', '0', 'token', 'team', 621, 'team-growth-single', 'package-group-team-single', 'plan-team-growth', 'plan-team-growth-v1', 'sku-team-growth-single',
-   'Team Growth - single month', 'Per seat, one month, no auto-renewal.', '219', '239', 'CNY', 'seat', 3, 500, 12000,
+   'Team Growth - single month', 'Per seat, one month, no auto-renewal.', '219', '239', 'CNY', 'seat', 3, 500, 2190,
    0, 30, 'once', 12, 1, 'active', '["team","seat","single","recommended"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('package-team-scale-single', '100001', '0', 'token', 'team', 622, 'team-scale-single', 'package-group-team-single', 'plan-team-scale', 'plan-team-scale-v1', 'sku-team-scale-single',
-   'Team Scale - single month', 'Per seat, one month, no auto-renewal.', '439', '459', 'CNY', 'seat', 5, 1000, 30000,
+   'Team Scale - single month', 'Per seat, one month, no auto-renewal.', '439', '459', 'CNY', 'seat', 5, 1000, 4390,
    0, 30, 'once', 13, 0, 'active', '["team","seat","single"]'::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
@@ -115,8 +115,6 @@ ON CONFLICT (id) DO UPDATE SET
   plan_id = EXCLUDED.plan_id,
   plan_version_id = EXCLUDED.plan_version_id,
   sku_id = EXCLUDED.sku_id,
-  name = EXCLUDED.name,
-  description = EXCLUDED.description,
   price_amount = EXCLUDED.price_amount,
   original_price_amount = EXCLUDED.original_price_amount,
   currency_code = EXCLUDED.currency_code,
