@@ -3,8 +3,10 @@ import React, { useState } from "react";
 import { PageLayout } from "@sdkwork/ui-mobile-react";
 import { Star, Shield, Zap } from "lucide-react";
 import { VipBanner } from "../components/VipBanner";
-import { VipPlanSelector, VipPlan } from "../components/VipPlanSelector";
-import { VipBenefitsGrid, VipBenefit } from "../components/VipBenefitsGrid";
+import { VipPlanSelector } from "../components/VipPlanSelector";
+import type { VipPlan } from "../components/VipPlanSelector";
+import { VipBenefitsGrid } from "../components/VipBenefitsGrid";
+import type { VipBenefit } from "../components/VipBenefitsGrid";
 import { VipFooter } from "../components/VipFooter";
 
 const VIP_PLANS: VipPlan[] = [

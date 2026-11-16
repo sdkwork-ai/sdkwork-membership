@@ -3,9 +3,12 @@ import React, { useState } from "react";
 import { PageLayout, showToast } from "@sdkwork/ui-mobile-react";
 import { useLocation } from "react-router";
 import { RechargeTabsHeader } from "../components/RechargeTabsHeader";
-import { RechargeTabContent, TokenAmount } from "../components/RechargeTabContent";
-import { PlanTabContent, TokenPlan } from "../components/PlanTabContent";
-import { CouponTabContent, CouponItem } from "../components/CouponTabContent";
+import { RechargeTabContent } from "../components/RechargeTabContent";
+import type { TokenAmount } from "../components/RechargeTabContent";
+import { PlanTabContent } from "../components/PlanTabContent";
+import type { TokenPlan } from "../components/PlanTabContent";
+import { CouponTabContent } from "../components/CouponTabContent";
+import type { CouponItem } from "../components/CouponTabContent";
 import { RechargeFooterBar } from "../components/RechargeFooterBar";
 
 const TOKEN_AMOUNTS: TokenAmount[] = [

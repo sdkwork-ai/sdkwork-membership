@@ -80,6 +80,20 @@ const CYCLE_PERIOD_COPY: Record<SdkworkTeamBillingCycle, { fallback: string; key
   year: { fallback: "/ 年", key: "token_plan.team.per_period_year" },
 };
 
+/**
+ * Period suffix rendered after the per-seat points amount.
+ *
+ * The points line names its own period (`/年`, `/季`, `/月`, `/单月`) instead of
+ * reusing the price suffix, so the credited period is explicit in every locale
+ * (`{{points}} membership points per seat per year` on an English host).
+ */
+const CYCLE_POINTS_PERIOD_COPY: Record<SdkworkTeamBillingCycle, { fallback: string; key: string }> = {
+  month: { fallback: "月", key: "token_plan.team.points_period_month" },
+  once: { fallback: "单月", key: "token_plan.team.points_period_once" },
+  quarter: { fallback: "季", key: "token_plan.team.points_period_quarter" },
+  year: { fallback: "年", key: "token_plan.team.points_period_year" },
+};
+
 /** Explains the billing behavior of the active cycle under the tabs. */
 const CYCLE_HINT_COPY: Partial<Record<SdkworkTeamBillingCycle, { fallback: string; key: string }>> = {
   once: {
@@ -174,6 +188,14 @@ export function SdkworkTeamPlanCards({
       return copy(CYCLE_PERIOD_COPY[cycle].key, CYCLE_PERIOD_COPY[cycle].fallback);
     }
     return copy("token_plan.team.per_period_month", "/ 月");
+  }
+
+  function resolveCyclePointsPeriodLabel(option: SdkworkTeamCycleOption | null): string {
+    const cycle = option?.billingCycle;
+    if (cycle && CYCLE_POINTS_PERIOD_COPY[cycle]) {
+      return copy(CYCLE_POINTS_PERIOD_COPY[cycle].key, CYCLE_POINTS_PERIOD_COPY[cycle].fallback);
+    }
+    return copy("token_plan.team.points_period_month", "月");
   }
 
   function setSeatDraft(groupKey: string, value: string): void {
@@ -389,8 +411,11 @@ export function SdkworkTeamPlanCards({
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
                     <Ticket aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
                     {formatSdkworkTeamCopy(
-                      copy("token_plan.team.points_included", "每坐席 {{points}} 会员积分"),
-                      { points: Number(activePackage.seatPointsAmount).toLocaleString("en-US") },
+                      copy("token_plan.team.points_included", "每坐席 {{points}} 会员积分/{{period}}"),
+                      {
+                        period: resolveCyclePointsPeriodLabel(activeOption),
+                        points: Number(activePackage.seatPointsAmount).toLocaleString("en-US"),
+                      },
                     )}
                   </p>
                 ) : null}

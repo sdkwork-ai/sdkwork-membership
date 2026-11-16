@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { TokenAmount } from "./RechargeTabContent";
+import type { TokenAmount } from "./RechargeTabContent";
 
 interface RechargeFooterBarProps {
   selectedSkuItem?: TokenAmount;

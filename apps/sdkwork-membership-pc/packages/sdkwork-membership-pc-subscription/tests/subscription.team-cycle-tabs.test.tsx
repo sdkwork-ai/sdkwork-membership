@@ -235,4 +235,27 @@ describe("team plan cards four billing options", () => {
       expect(readCycleTabs()).toEqual(["连续包年", "连续包月", "连续包季", "单月购买"]);
     });
   });
+
+  it("names the points period on every billing cycle", async () => {
+    renderCards(createPort(TEAM_GROUPS));
+
+    await waitFor(() => {
+      expect(screen.getByText("每坐席 5,000 会员积分/年")).toBeInTheDocument();
+    });
+
+    for (const [groupKey, period] of [
+      ["602", "月"],
+      ["603", "季"],
+      ["604", "单月"],
+    ] as const) {
+      fireEvent.click(
+        screen
+          .getAllByRole("button")
+          .find((button) => button.getAttribute("data-team-cycle-tab") === groupKey)!,
+      );
+      await waitFor(() => {
+        expect(screen.getByText(`每坐席 5,000 会员积分/${period}`)).toBeInTheDocument();
+      });
+    }
+  });
 });

@@ -1,6 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { LucideIcon } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 export interface VipBenefit {
   icon: LucideIcon;

@@ -16,6 +16,12 @@
 --
 -- ON CONFLICT (id) DO UPDATE SET is used (not DO NOTHING) so re-seeding after
 -- seed corrections overwrites existing rows.
+--
+-- Display text (name/description/title) is intentionally NOT part of the
+-- conflict update set: it is owned by the locale overlay files
+-- (seeds/locales/<locale>/001_catalog_locale.sql). Re-running this base seed
+-- after a correction must never revert a localized team catalog back to the
+-- English fallback when the locale overlay is checksum-skipped.
 
 INSERT INTO membership_plan (
   id, tenant_id, organization_id, category, audience, plan_no, plan_code, name, rank, description, sort_weight, status, created_at, updated_at
@@ -26,9 +32,7 @@ INSERT INTO membership_plan (
 ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,
-  name = EXCLUDED.name,
   rank = EXCLUDED.rank,
-  description = EXCLUDED.description,
   sort_weight = EXCLUDED.sort_weight,
   status = EXCLUDED.status,
   updated_at = EXCLUDED.updated_at;
@@ -40,8 +44,6 @@ INSERT INTO membership_plan_version (
   ('plan-team-growth-v1', '100001', '0', 'plan-team-growth', 'v1', 'Team Growth', 'Higher pooled quota, shared agents and priority lanes for growing teams.', 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
   ('plan-team-scale-v1', '100001', '0', 'plan-team-scale', 'v1', 'Team Scale', 'Maximum quota and dedicated capacity for large organizations.', 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 ON CONFLICT (id) DO UPDATE SET
-  title = EXCLUDED.title,
-  description = EXCLUDED.description,
   lifecycle_status = EXCLUDED.lifecycle_status,
   updated_at = EXCLUDED.updated_at;
 
@@ -56,8 +58,6 @@ ON CONFLICT (id) DO UPDATE SET
   category = EXCLUDED.category,
   audience = EXCLUDED.audience,
   external_id = EXCLUDED.external_id,
-  name = EXCLUDED.name,
-  description = EXCLUDED.description,
   billing_cycle = EXCLUDED.billing_cycle,
   duration_days = EXCLUDED.duration_days,
   display_channel = EXCLUDED.display_channel,
@@ -115,8 +115,6 @@ ON CONFLICT (id) DO UPDATE SET
   plan_id = EXCLUDED.plan_id,
   plan_version_id = EXCLUDED.plan_version_id,
   sku_id = EXCLUDED.sku_id,
-  name = EXCLUDED.name,
-  description = EXCLUDED.description,
   price_amount = EXCLUDED.price_amount,
   original_price_amount = EXCLUDED.original_price_amount,
   currency_code = EXCLUDED.currency_code,
