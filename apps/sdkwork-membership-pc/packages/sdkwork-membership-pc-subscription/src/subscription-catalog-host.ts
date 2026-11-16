@@ -64,6 +64,15 @@ export interface SdkworkSubscriptionCatalogHostComponents {
 export interface SdkworkSubscriptionCatalogPageProps {
   checkoutPort?: SdkworkMembershipCheckoutPort;
   components?: SdkworkSubscriptionCatalogHostComponents;
+  /**
+   * Points balance the host's points modals display.
+   *
+   * Hosts whose points ledger is not the Membership points asset (for example a
+   * Token Bank compute-credit account) supply the figure they want the details
+   * and purchase modals to show. When omitted, the page falls back to
+   * `memberSummary.pointBalance`.
+   */
+  currentPoints?: number | null;
   memberSummary?: SdkworkSubscriptionMemberSummary | null;
   notifyOutlet?: ComponentType;
   onLoginRequired?: () => void;

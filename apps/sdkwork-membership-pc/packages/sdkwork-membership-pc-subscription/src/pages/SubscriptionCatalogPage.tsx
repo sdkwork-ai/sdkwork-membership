@@ -56,6 +56,7 @@ export function SdkworkSubscriptionCatalogPage({
   catalogController: catalogControllerProp,
   checkoutPort,
   components,
+  currentPoints: currentPointsProp,
   memberSummary: memberSummaryProp,
   notifyOutlet: NotifyOutletProp,
   onLoginRequired,
@@ -111,6 +112,13 @@ export function SdkworkSubscriptionCatalogPage({
   const completedPaymentKeyRef = useRef<string | null>(null);
 
   const memberSummary = memberSummaryProp ?? state.memberSummary;
+  // The details dialog is a balance surface just like the purchase dialog, so
+  // both receive the same figure. A host that tracks its own points ledger (a
+  // Token Bank compute-credit account, for instance) passes it explicitly;
+  // otherwise the Membership summary remains the fallback.
+  const currentPoints = currentPointsProp !== undefined
+    ? currentPointsProp
+    : memberSummaryProp?.pointBalance ?? null;
   const handleLoginRequired = onLoginRequired ?? redirectToDefaultLogin;
 
   const [audience, setAudience] = useState<SdkworkSubscriptionAudience>("personal");
@@ -385,12 +393,13 @@ export function SdkworkSubscriptionCatalogPage({
           />
 
           <PointsPurchaseModal
-            currentPoints={memberSummaryProp?.pointBalance ?? null}
+            currentPoints={currentPoints}
             isOpen={isPointsModalOpen}
             onClose={() => setIsPointsModalOpen(false)}
           />
 
           <PointsDetailsModal
+            currentPoints={currentPoints}
             isOpen={isPointsDetailsModalOpen}
             onClose={() => setIsPointsDetailsModalOpen(false)}
           />

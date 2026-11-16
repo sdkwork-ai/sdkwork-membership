@@ -1,6 +1,20 @@
 use sdkwork_utils_rust::number::parse_int;
 use sdkwork_web_core::WebRequestContext;
 
+/// Platform public tenant that owns the seeded storefront catalogue.
+const DEFAULT_PUBLIC_TENANT_ID: i64 = 100001;
+
+/// Tenant id owning the shared storefront catalogue, used when an
+/// optional-credential catalog read arrives without a signed-in principal
+/// (override via `MEMBERSHIP_PUBLIC_TENANT_ID`).
+pub(crate) fn public_tenant_id() -> i64 {
+    std::env::var("MEMBERSHIP_PUBLIC_TENANT_ID")
+        .ok()
+        .and_then(|value| parse_int(value.trim()))
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_PUBLIC_TENANT_ID)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct NumericRuntimeSubject {
     pub tenant_id: i64,
