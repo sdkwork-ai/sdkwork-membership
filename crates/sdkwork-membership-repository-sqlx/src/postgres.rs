@@ -58,6 +58,14 @@ use crate::{
     MEMBERSHIP_PURCHASE_ACTION_ADD_SEATS,
 };
 
+/// Benefit code the personal token plan uses for subscription points.
+const SUBSCRIPTION_POINTS_BENEFIT_CODE: &str = "daily_points";
+/// Seeded `daily_points` benefit definition (`001_catalog.sql`). Team plans do
+/// not declare this benefit statically: the per-seat amount lives on the package
+/// (`seat_points_amount`) and varies by period, so fulfillment grants it
+/// directly with the purchased seat count.
+const SUBSCRIPTION_POINTS_BENEFIT_ID: &str = "benefit-daily-points";
+
 const LOAD_MEMBERSHIP_PACKAGES_BASE: &str = r#"
 SELECT
     CAST(p.external_id AS INTEGER) AS external_id,
@@ -3709,7 +3717,15 @@ async fn reserve_membership_purchase(
         &membership_expires_at,
     )
     .await?;
-    insert_entitlements(tx, command, &plan, &binding, &membership_expires_at).await?;
+    insert_entitlements(
+        tx,
+        command,
+        &package,
+        &plan,
+        &binding,
+        &membership_expires_at,
+    )
+    .await?;
     Ok(build_purchase_outcome(command, &package, &plan, "pending"))
 }
 
@@ -4996,102 +5012,171 @@ async fn persist_membership_subscription(
 async fn insert_entitlements(
     tx: &mut Transaction<'_, Postgres>,
     command: &SubmitMembershipPurchaseCommand,
+    package: &ParsedMembershipPackage,
     plan: &StoredMembershipPlan,
     binding: &MembershipPurchaseBinding,
     expires_at: &str,
 ) -> AppMembershipResult<()> {
-    let period_id = membership_period_id(&binding.membership_uuid, &command.order_no);
     // Team plans license `seats` pooled seats, so every granted entitlement
     // quantity (points) is multiplied by the purchased seat quantity.
-    let seats = if plan.audience == "team" {
-        command.seats.max(1)
+    let team = plan.audience == "team";
+    let seats = if team { command.seats.max(1) } else { 1 };
+    // `seat_points_amount` is the per-seat subscription points for this
+    // package's own period (month / quarter / year / single month), so one
+    // purchase grants exactly `seat_points_amount × seats` points for that
+    // period — the same amount the catalog card displays.
+    let team_seat_points = if team {
+        package.item.seat_points_amount.max(0) * seats
     } else {
-        1
+        0
     };
+    let mut plan_grants_points = false;
     for (index, benefit) in plan.benefits.iter().enumerate() {
         let benefit_code = benefit
             .benefit_key
             .clone()
             .unwrap_or_else(|| format!("membership-benefit-{}", benefit.id));
-        let benefit_id = membership_benefit_definition_id_for_code(&benefit_code);
-        let quantity = (benefit.usage_limit.unwrap_or(0).max(0) * seats).to_string();
-        let account_id = format!(
-            "{}-entitlement-account-{}",
-            binding.membership_uuid, benefit_id
-        );
-        let grant_id = format!("{}-entitlement-grant-{}", period_id, index + 1);
-        let ledger_id = format!("{}-entitlement-ledger-{}", period_id, index + 1);
-        sqlx::query(
-            r#"
-            INSERT INTO membership_entitlement_grant
-                (id, tenant_id, organization_id, grant_no, benefit_id, subject_type, subject_id,
-                 source_type, source_id, grant_policy, granted_quantity, status, starts_at,
-                 expires_at, request_no, idempotency_key, created_at, updated_at)
-            VALUES
-                ($1, CAST($2 AS TEXT), CAST($3 AS TEXT), $4, $5, 'user', CAST($6 AS TEXT),
-                 'membership_subscription', $7, 'membership_plan', $8, 'pending', $9::timestamptz, $10::timestamptz,
-                 $11, $12, $13::timestamptz, $14::timestamptz)
-            "#,
-        )
-        .bind(&grant_id)
-        .bind(command.subject.tenant_id)
-        .bind(command.subject.organization_id)
-        .bind(&grant_id)
-        .bind(&benefit_id)
-        .bind(command.subject.user_id)
-        .bind(&binding.membership_uuid)
-        .bind(&quantity)
-        .bind(&command.requested_at)
-        .bind(expires_at)
-        .bind(format!("{}-grant-{}", command.order_no, index + 1))
-        .bind(format!("{}-grant-{}", command.idempotency_key, index + 1))
-        .bind(&command.requested_at)
-        .bind(&command.requested_at)
-        .execute(&mut **tx)
-        .await
-        .map_err(|error| store_error("failed to insert entitlement grant", error))?;
-
-        let account = upsert_membership_entitlement_account(
+        let mut benefit_id = membership_benefit_definition_id_for_code(&benefit_code);
+        let is_points_benefit = benefit_code.eq_ignore_ascii_case(SUBSCRIPTION_POINTS_BENEFIT_CODE);
+        // Team subscription points always resolve to the seeded `daily_points`
+        // definition, so a plan-declared benefit and the synthesized per-seat
+        // grant land in the same account instead of two dangling identities.
+        if team && is_points_benefit {
+            benefit_id = SUBSCRIPTION_POINTS_BENEFIT_ID.to_owned();
+        }
+        plan_grants_points = plan_grants_points || is_points_benefit;
+        // A team plan that already declares the `daily_points` benefit must not
+        // receive a second, synthesized grant. Its stored quantity is replaced
+        // by the package's per-seat amount so display and credit agree; the
+        // plan benefit's own quantity remains authoritative only when the
+        // catalog publishes no per-seat amount.
+        let quantity = if team && is_points_benefit && team_seat_points > 0 {
+            team_seat_points
+        } else {
+            benefit.usage_limit.unwrap_or(0).max(0) * seats
+        };
+        insert_entitlement_grant_record(
             tx,
             command,
-            &account_id,
+            binding,
+            &(index + 1).to_string(),
             &benefit_id,
-            &quantity,
+            &quantity.to_string(),
             expires_at,
         )
         .await?;
-
-        sqlx::query(
-            r#"
-            INSERT INTO membership_entitlement_ledger_entry
-                (id, tenant_id, organization_id, ledger_no, account_id, grant_id, benefit_id,
-                 subject_type, subject_id, direction, amount, balance_after, business_type,
-                 source_type, source_id, request_no, idempotency_key, occurred_at, created_at)
-            VALUES
-                ($1, CAST($2 AS TEXT), CAST($3 AS TEXT), $4, $5, $6, $7,
-                 'user', CAST($8 AS TEXT), 'credit', $9, $10, 'membership_grant',
-                 'membership_subscription', $11, $12, $13, $14::timestamptz, $15::timestamptz)
-            "#,
-        )
-        .bind(&ledger_id)
-        .bind(command.subject.tenant_id)
-        .bind(command.subject.organization_id)
-        .bind(&ledger_id)
-        .bind(&account.account_id)
-        .bind(&grant_id)
-        .bind(&benefit_id)
-        .bind(command.subject.user_id)
-        .bind(&quantity)
-        .bind(&account.balance_after)
-        .bind(&binding.membership_uuid)
-        .bind(format!("{}-ledger-{}", command.order_no, index + 1))
-        .bind(format!("{}-ledger-{}", command.idempotency_key, index + 1))
-        .bind(&command.requested_at)
-        .bind(&command.requested_at)
-        .execute(&mut **tx)
-        .await
-        .map_err(|error| store_error("failed to insert entitlement ledger", error))?;
     }
+    // No team plan benefit carries subscription points today, so fulfill the
+    // catalog's `seat_points_amount` as one points grant per purchase. The
+    // `points` slot keeps the derived ids distinct from the plan-benefit slots.
+    if team && !plan_grants_points && team_seat_points > 0 {
+        insert_entitlement_grant_record(
+            tx,
+            command,
+            binding,
+            "points",
+            SUBSCRIPTION_POINTS_BENEFIT_ID,
+            &team_seat_points.to_string(),
+            expires_at,
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// Inserts one period-scoped entitlement grant, extends its benefit account,
+/// and appends the credit ledger entry.
+///
+/// `slot` participates in every derived id. Plan-benefit slots stay the 1-based
+/// benefit index (the historical ids), while the team points grant uses the
+/// dedicated `points` slot so it can never collide with a plan benefit.
+#[allow(clippy::too_many_arguments)]
+async fn insert_entitlement_grant_record(
+    tx: &mut Transaction<'_, Postgres>,
+    command: &SubmitMembershipPurchaseCommand,
+    binding: &MembershipPurchaseBinding,
+    slot: &str,
+    benefit_id: &str,
+    quantity: &str,
+    expires_at: &str,
+) -> AppMembershipResult<()> {
+    let period_id = membership_period_id(&binding.membership_uuid, &command.order_no);
+    let account_id = format!(
+        "{}-entitlement-account-{}",
+        binding.membership_uuid, benefit_id
+    );
+    let grant_id = format!("{period_id}-entitlement-grant-{slot}");
+    let ledger_id = format!("{period_id}-entitlement-ledger-{slot}");
+    sqlx::query(
+        r#"
+        INSERT INTO membership_entitlement_grant
+            (id, tenant_id, organization_id, grant_no, benefit_id, subject_type, subject_id,
+             source_type, source_id, grant_policy, granted_quantity, status, starts_at,
+             expires_at, request_no, idempotency_key, created_at, updated_at)
+        VALUES
+            ($1, CAST($2 AS TEXT), CAST($3 AS TEXT), $4, $5, 'user', CAST($6 AS TEXT),
+             'membership_subscription', $7, 'membership_plan', $8, 'pending', $9::timestamptz, $10::timestamptz,
+             $11, $12, $13::timestamptz, $14::timestamptz)
+        "#,
+    )
+    .bind(&grant_id)
+    .bind(command.subject.tenant_id)
+    .bind(command.subject.organization_id)
+    .bind(&grant_id)
+    .bind(benefit_id)
+    .bind(command.subject.user_id)
+    .bind(&binding.membership_uuid)
+    .bind(quantity)
+    .bind(&command.requested_at)
+    .bind(expires_at)
+    .bind(format!("{}-grant-{}", command.order_no, slot))
+    .bind(format!("{}-grant-{}", command.idempotency_key, slot))
+    .bind(&command.requested_at)
+    .bind(&command.requested_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| store_error("failed to insert entitlement grant", error))?;
+
+    let account = upsert_membership_entitlement_account(
+        tx,
+        command,
+        &account_id,
+        benefit_id,
+        quantity,
+        expires_at,
+    )
+    .await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO membership_entitlement_ledger_entry
+            (id, tenant_id, organization_id, ledger_no, account_id, grant_id, benefit_id,
+             subject_type, subject_id, direction, amount, balance_after, business_type,
+             source_type, source_id, request_no, idempotency_key, occurred_at, created_at)
+        VALUES
+            ($1, CAST($2 AS TEXT), CAST($3 AS TEXT), $4, $5, $6, $7,
+             'user', CAST($8 AS TEXT), 'credit', $9, $10, 'membership_grant',
+             'membership_subscription', $11, $12, $13, $14::timestamptz, $15::timestamptz)
+        "#,
+    )
+    .bind(&ledger_id)
+    .bind(command.subject.tenant_id)
+    .bind(command.subject.organization_id)
+    .bind(&ledger_id)
+    .bind(&account.account_id)
+    .bind(&grant_id)
+    .bind(benefit_id)
+    .bind(command.subject.user_id)
+    .bind(quantity)
+    .bind(&account.balance_after)
+    .bind(&binding.membership_uuid)
+    .bind(format!("{}-ledger-{}", command.order_no, slot))
+    .bind(format!("{}-ledger-{}", command.idempotency_key, slot))
+    .bind(&command.requested_at)
+    .bind(&command.requested_at)
+    .execute(&mut **tx)
+    .await
+    .map_err(|error| store_error("failed to insert entitlement ledger", error))?;
     Ok(())
 }
 

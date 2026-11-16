@@ -20,10 +20,14 @@ fn postgres_platform_catalog_and_entitlement_identity_are_stable() {
     assert!(POSTGRES_SOURCE.contains(
         "let period_id = membership_period_id(&binding.membership_uuid, &command.order_no);"
     ));
+    // Every period-scoped grant/ledger id stays derived from the period plus a
+    // stable slot (the 1-based plan-benefit index, or `points` for the team
+    // seat-points grant), so a replay never mints a second identity.
+    assert!(POSTGRES_SOURCE.contains("async fn insert_entitlement_grant_record("));
     assert!(POSTGRES_SOURCE
-        .contains("let grant_id = format!(\"{}-entitlement-grant-{}\", period_id, index + 1);"));
+        .contains("let grant_id = format!(\"{period_id}-entitlement-grant-{slot}\");"));
     assert!(POSTGRES_SOURCE
-        .contains("let ledger_id = format!(\"{}-entitlement-ledger-{}\", period_id, index + 1);"));
+        .contains("let ledger_id = format!(\"{period_id}-entitlement-ledger-{slot}\");"));
 }
 
 /// `add_seats` must never fall through to the reserve/activate path that creates
