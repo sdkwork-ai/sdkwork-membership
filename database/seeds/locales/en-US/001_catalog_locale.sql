@@ -130,8 +130,10 @@ UPDATE membership_plan_version SET title = 'Team Starter', description = 'Organi
 UPDATE membership_plan_version SET title = 'Team Growth', description = 'Higher pooled quota, shared agents, and priority lanes for growing teams.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1';
 UPDATE membership_plan_version SET title = 'Team Scale', description = 'Maximum pooled quota and dedicated capacity for large organizations.', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-scale-v1';
 
-UPDATE membership_package_group SET name = 'Team Annual', description = 'Billed yearly per seat, save about 17%.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-annual';
-UPDATE membership_package_group SET name = 'Team Monthly', description = 'Billed monthly per seat, cancel anytime.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-monthly';
+UPDATE membership_package_group SET name = 'Team Annual', description = 'Save about 16%', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-annual';
+UPDATE membership_package_group SET name = 'Team Monthly', description = 'Cancel anytime', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-monthly';
+UPDATE membership_package_group SET name = 'Team Quarterly', description = 'Auto-renews quarterly', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-quarterly';
+UPDATE membership_package_group SET name = 'Team Single Month', description = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-single';
 
 UPDATE membership_package SET name = 'Team Starter - Monthly per seat', description = 'Per seat, billed monthly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-monthly';
 UPDATE membership_package SET name = 'Team Starter - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-annual';
@@ -139,6 +141,12 @@ UPDATE membership_package SET name = 'Team Growth - Monthly per seat', descripti
 UPDATE membership_package SET name = 'Team Growth - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-annual';
 UPDATE membership_package SET name = 'Team Scale - Monthly per seat', description = 'Per seat, billed monthly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-monthly';
 UPDATE membership_package SET name = 'Team Scale - Annual per seat', description = 'Per seat, billed yearly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-annual';
+UPDATE membership_package SET name = 'Team Starter - Quarterly per seat', description = 'Per seat, billed quarterly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-quarterly';
+UPDATE membership_package SET name = 'Team Growth - Quarterly per seat', description = 'Per seat, billed quarterly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-quarterly';
+UPDATE membership_package SET name = 'Team Scale - Quarterly per seat', description = 'Per seat, billed quarterly.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-quarterly';
+UPDATE membership_package SET name = 'Team Starter - Single month per seat', description = 'Per seat, one month, no auto-renewal.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-single';
+UPDATE membership_package SET name = 'Team Growth - Single month per seat', description = 'Per seat, one month, no auto-renewal.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-single';
+UPDATE membership_package SET name = 'Team Scale - Single month per seat', description = 'Per seat, one month, no auto-renewal.', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-single';
 
 UPDATE membership_plan_benefit SET grant_quantity = 'Shared standard lane', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-starter-v1-benefit-queue';
 UPDATE membership_plan_benefit SET grant_quantity = 'Shared fast lane', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1-benefit-queue';

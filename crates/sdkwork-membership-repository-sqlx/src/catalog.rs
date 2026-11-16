@@ -201,6 +201,7 @@ fn builtin_package_item(
     let plan_rank = catalog_plan_rank(plan_name);
     AppMembershipPackageItem {
         id,
+        package_group_id: String::new(),
         category: "token".to_owned(),
         audience: "personal".to_owned(),
         name: name.to_owned(),
@@ -232,6 +233,15 @@ fn builtin_group(
     duration_days: i64,
     packages: Vec<AppMembershipPackageItem>,
 ) -> AppMembershipPackageGroupItem {
+    // The demo catalog declares packages inline per group; carry the group id
+    // onto every child so the read model keeps the same shape as the database.
+    let packages = packages
+        .into_iter()
+        .map(|mut package| {
+            package.package_group_id = id.to_string();
+            package
+        })
+        .collect();
     AppMembershipPackageGroupItem {
         id,
         category: "token".to_owned(),

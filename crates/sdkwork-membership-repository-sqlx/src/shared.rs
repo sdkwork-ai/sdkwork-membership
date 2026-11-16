@@ -305,6 +305,7 @@ pub(crate) fn map_membership_package_record(
         .filter(|value| !value.is_empty());
     let item = AppMembershipPackageItem {
         id,
+        package_group_id: group_external_id.to_string(),
         category: if category.trim().is_empty() {
             "token".to_owned()
         } else {

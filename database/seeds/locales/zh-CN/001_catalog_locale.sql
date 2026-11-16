@@ -130,8 +130,13 @@ UPDATE membership_plan_version SET title = '团队基础版', description = '面
 UPDATE membership_plan_version SET title = '团队专业版', description = '更高共享额度、团队级智能体与快速通道，适合成长中的团队。', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1';
 UPDATE membership_plan_version SET title = '团队旗舰版', description = '最高共享额度与专属通道，面向大型组织。', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-scale-v1';
 
-UPDATE membership_package_group SET name = '团队年度版', description = '按坐席按年计费，约省 17%。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-annual';
-UPDATE membership_package_group SET name = '团队月度版', description = '按坐席按月计费，可随时取消。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-monthly';
+-- Team groups mirror the personal four-option wording because the team plan cards
+-- render one cycle tab per group as `group.name + group.description`
+-- (连续包年 9.7折 / 连续包月 9.9折 / 连续包季 9.8折 / 单月购买).
+UPDATE membership_package_group SET name = '连续包年', description = '9.7折', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-annual';
+UPDATE membership_package_group SET name = '连续包月', description = '9.9折', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-monthly';
+UPDATE membership_package_group SET name = '连续包季', description = '9.8折', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-quarterly';
+UPDATE membership_package_group SET name = '单月购买', description = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = 'package-group-team-single';
 
 UPDATE membership_package SET name = '团队基础版 - 按月按坐席', description = '按坐席计费，每月结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-monthly';
 UPDATE membership_package SET name = '团队基础版 - 按年按坐席', description = '按坐席计费，每年结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-annual';
@@ -139,6 +144,12 @@ UPDATE membership_package SET name = '团队专业版 - 按月按坐席', descri
 UPDATE membership_package SET name = '团队专业版 - 按年按坐席', description = '按坐席计费，每年结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-annual';
 UPDATE membership_package SET name = '团队旗舰版 - 按月按坐席', description = '按坐席计费，每月结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-monthly';
 UPDATE membership_package SET name = '团队旗舰版 - 按年按坐席', description = '按坐席计费，每年结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-annual';
+UPDATE membership_package SET name = '团队基础版 - 按季按坐席', description = '按坐席计费，每季度结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-quarterly';
+UPDATE membership_package SET name = '团队专业版 - 按季按坐席', description = '按坐席计费，每季度结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-quarterly';
+UPDATE membership_package SET name = '团队旗舰版 - 按季按坐席', description = '按坐席计费，每季度结算。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-quarterly';
+UPDATE membership_package SET name = '团队基础版 - 按单月按坐席', description = '按坐席计费，单月购买，不自动续费。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-starter-single';
+UPDATE membership_package SET name = '团队专业版 - 按单月按坐席', description = '按坐席计费，单月购买，不自动续费。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-growth-single';
+UPDATE membership_package SET name = '团队旗舰版 - 按单月按坐席', description = '按坐席计费，单月购买，不自动续费。', updated_at = CURRENT_TIMESTAMP WHERE id = 'package-team-scale-single';
 
 UPDATE membership_plan_benefit SET grant_quantity = '共享标准通道', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-starter-v1-benefit-queue';
 UPDATE membership_plan_benefit SET grant_quantity = '共享快速通道', updated_at = CURRENT_TIMESTAMP WHERE id = 'plan-team-growth-v1-benefit-queue';

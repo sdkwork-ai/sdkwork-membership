@@ -34,6 +34,8 @@ export {
   type SdkworkTeamErrorCopy,
 } from "./team-plan-error-copy";
 export {
+  TEAM_BILLING_CYCLE_ORDER,
+  buildTeamCycleOptions,
   clampTeamSeatCount,
   computeTeamSeatTotal,
   formatTeamCnyAmount,
@@ -46,6 +48,9 @@ export {
   selectTeamPlanPackage,
   toTeamBillingCycle,
   type SdkworkTeamBillingCycle,
+  type SdkworkTeamCycleFallbackLabel,
+  type SdkworkTeamCycleGroupLike,
+  type SdkworkTeamCycleOption,
   type SdkworkTeamPlanGroup,
   type SdkworkTeamPlanPackageLike,
   type SdkworkTeamSeatBounds,
@@ -102,6 +107,7 @@ export {
   type SdkworkTeamOwnMembership,
   type SdkworkTeamOrganizationChoice,
   type SdkworkTeamPackage,
+  type SdkworkTeamPackageGroup,
   type SdkworkTeamRosterMember,
   type SdkworkTeamRosterPage,
   type SdkworkTeamRosterQuery,
